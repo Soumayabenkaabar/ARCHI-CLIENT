@@ -9,12 +9,14 @@ class ClientSession {
   final String projetId;
   final String clientNom;
   final String clientEmail;
+  final bool passwordChanged;
 
   const ClientSession({
     required this.id,
     required this.projetId,
     required this.clientNom,
     required this.clientEmail,
+    this.passwordChanged = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -22,6 +24,7 @@ class ClientSession {
     'projet_id': projetId,
     'client_nom': clientNom,
     'client_email': clientEmail,
+    'password_changed': passwordChanged,
   };
 
   factory ClientSession.fromJson(Map<String, dynamic> j) => ClientSession(
@@ -29,6 +32,7 @@ class ClientSession {
     projetId: j['projet_id'],
     clientNom: j['client_nom'],
     clientEmail: j['client_email'],
+    passwordChanged: j['password_changed'] ?? false,
   );
 }
 
@@ -58,9 +62,11 @@ class ClientAuthService {
     // 2. Récupère le projet lié dans client_portal_access
     final rows = await _supa
         .from('client_portal_access')
-        .select('id, projet_id, client_nom, client_email, actif')
+        .select('id, projet_id, client_nom, client_email, actif, password_changed')
         .eq('client_email', trimEmail)
         .eq('actif', true)
+        .not('projet_id', 'is', null)
+        .order('created_at', ascending: false)
         .limit(1);
 
     if (rows.isEmpty) {
@@ -81,19 +87,25 @@ class ClientAuthService {
       projetId: row['projet_id'],
       clientNom: row['client_nom'],
       clientEmail: row['client_email'],
+      passwordChanged: row['password_changed'] ?? false,
     );
 
     // 4. Persiste la session localement
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
+    await saveSession(session);
 
     return session;
+  }
+
+  // ── Sauvegarde la session ─────────────────────────────────────────────────
+  static Future<void> saveSession(ClientSession session) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_sessionKey, jsonEncode(session.toJson()));
   }
 
   // ── Session persistée ─────────────────────────────────────────────────────
   static Future<ClientSession?> getSession() async {
     try {
-      // Vérifie d'abord que Supabase Auth est toujours connecté
+      // Vérifie que Supabase Auth est toujours connecté
       final user = _supa.auth.currentUser;
       if (user == null) return null;
 

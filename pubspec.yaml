@@ -1,0 +1,33 @@
+name: archi_client
+description: Portail client ArchiManager — accès lecture projet architectural
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Supabase
+  supabase_flutter: ^2.3.0
+
+  # UI
+  lucide_icons: ^0.257.0
+  cached_network_image: ^3.3.0
+
+  # Utilitaires
+  http: ^1.2.0
+  url_launcher: ^6.2.4
+  file_picker: ^11.0.2
+  shared_preferences: ^2.2.2
+  intl: ^0.20.2
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/

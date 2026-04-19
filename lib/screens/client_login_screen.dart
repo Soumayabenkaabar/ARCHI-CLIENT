@@ -13,64 +13,63 @@ class ClientLoginScreen extends StatefulWidget {
 }
 
 class _ClientLoginScreenState extends State<ClientLoginScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _loading = false;
   bool _showPass = false;
   String? _error;
-  late AnimationController _anim;
+
+  late AnimationController _fadeCtrl;
+  late AnimationController _slideCtrl;
   late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
 
   @override
   void initState() {
     super.initState();
-    _anim = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
-    _fadeAnim = CurvedAnimation(parent: _anim, curve: Curves.easeOut);
-    _anim.forward();
+    _fadeCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 800));
+    _slideCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
+    _fadeAnim =
+        CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.06),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
+    _fadeCtrl.forward();
+    _slideCtrl.forward();
   }
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     _passCtrl.dispose();
-    _anim.dispose();
+    _fadeCtrl.dispose();
+    _slideCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
     final email = _emailCtrl.text.trim();
     final pass = _passCtrl.text.trim();
-
     if (email.isEmpty || pass.isEmpty) {
       setState(() => _error = 'Veuillez remplir tous les champs.');
       return;
     }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
+    setState(() { _loading = true; _error = null; });
     try {
       final session = await ClientAuthService.login(email, pass);
       if (!mounted) return;
-
       if (!session.passwordChanged) {
-        // ── Première connexion → forcer changement mot de passe ──
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => ClientChangePasswordScreen(session: session),
-          ),
-        );
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => ClientChangePasswordScreen(session: session),
+        ));
       } else {
-        // ── Connexion normale → portail ──
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => ClientPortalScreen(session: session),
-          ),
-        );
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => ClientPortalScreen(session: session),
+        ));
       }
     } catch (e) {
       if (!mounted) return;
@@ -84,298 +83,510 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final isWide = size.width > 800;
-
+    final isWide = size.width > 860;
     return Scaffold(
-      backgroundColor: kDark,
+      backgroundColor: const Color(0xFF0A0E1A),
       body: isWide ? _buildDesktop() : _buildMobile(),
     );
   }
 
-  // ── Desktop : split screen ─────────────────────────────────────────────────
-  Widget _buildDesktop() => Row(children: [
-        // Gauche — branding
-        Expanded(
-          flex: 5,
-          child: Container(
+  // ── Desktop ────────────────────────────────────────────────────────────────
+  Widget _buildDesktop() {
+    return Row(children: [
+      // ── Gauche — Branding ──
+      Expanded(
+        flex: 55,
+        child: Stack(children: [
+          // Fond gradient profond
+          Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF1F2937), Color(0xFF111827)],
+                colors: [Color(0xFF0A0E1A), Color(0xFF0F1629), Color(0xFF0A0E1A)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
             ),
-            padding: const EdgeInsets.all(60),
+          ),
+          // Cercles décoratifs lumineux
+          Positioned(
+            top: -80,
+            left: -80,
+            child: Container(
+              width: 340,
+              height: 340,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(colors: [
+                  kAccent.withOpacity(0.18),
+                  Colors.transparent,
+                ]),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 60,
+            right: -60,
+            child: Container(
+              width: 260,
+              height: 260,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(colors: [
+                  const Color(0xFF3B82F6).withOpacity(0.12),
+                  Colors.transparent,
+                ]),
+              ),
+            ),
+          ),
+          // Grille décorative subtile
+          Positioned.fill(
+            child: CustomPaint(painter: _GridPainter()),
+          ),
+          // Contenu
+          Padding(
+            padding: const EdgeInsets.all(56),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Logo
                 Row(children: [
                   Container(
-                    width: 48,
-                    height: 48,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
-                        color: kAccent,
-                        borderRadius: BorderRadius.circular(12)),
+                      color: kAccent,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: kAccent.withOpacity(0.4),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
                     child: const Icon(LucideIcons.building2,
-                        color: Colors.white, size: 24),
+                        color: Colors.white, size: 22),
                   ),
-                  const SizedBox(width: 14),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('ArchiManager',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800)),
-                      Text('Portail Client',
-                          style: TextStyle(
-                              color: Color(0xFF9CA3AF), fontSize: 13)),
-                    ],
-                  ),
+                  const SizedBox(width: 12),
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('ArchiManager',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3)),
+                    Text('Portail Client',
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.4),
+                            fontSize: 12)),
+                  ]),
                 ]),
                 const Spacer(),
-                const Text(
-                  'Suivez votre projet\nen temps réel',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 38,
-                      fontWeight: FontWeight.w800,
-                      height: 1.2),
+                // Headline
+                FadeTransition(
+                  opacity: _fadeAnim,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Votre projet,',
+                          style: TextStyle(
+                              color: Colors.white.withOpacity(0.5),
+                              fontSize: 36,
+                              fontWeight: FontWeight.w300,
+                              letterSpacing: -1)),
+                      const Text('en temps réel.',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 48,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -2,
+                              height: 1)),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Suivez l\'avancement, consultez les photos\net échangez avec votre architecte.',
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.45),
+                            fontSize: 15,
+                            height: 1.7),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Accédez à l\'avancement, aux photos et\ncommuniquez directement avec votre architecte.',
-                  style: TextStyle(
-                      color: Color(0xFF9CA3AF), fontSize: 15, height: 1.6),
-                ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 52),
+                // Features
                 ...[
-                  (LucideIcons.checkCircle, 'Suivi des tâches en temps réel'),
-                  (LucideIcons.camera, 'Galerie photos du chantier'),
-                  (LucideIcons.box, 'Modèle 3D interactif'),
-                  (LucideIcons.messageCircle,
-                      'Messagerie directe avec l\'architecte'),
-                ].map((e) => Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: Row(children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                              color: kAccent.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(8)),
-                          child: Icon(e.$1, color: kAccent, size: 16),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(e.$2,
-                            style: const TextStyle(
-                                color: Color(0xFFD1D5DB), fontSize: 14)),
-                      ]),
-                    )),
+                  (LucideIcons.checkCircle2, 'Tâches & Planning',
+                      'Avancement en temps réel'),
+                  (LucideIcons.camera, 'Galerie Photos',
+                      'Suivi visuel du chantier'),
+                  (LucideIcons.box, 'Modèle 3D',
+                      'Maquette numérique interactive'),
+                  (LucideIcons.messageSquare, 'Messagerie',
+                      'Contact direct avec l\'architecte'),
+                ].map((e) => _featureTile(e.$1, e.$2, e.$3)),
                 const Spacer(),
-                const Text('© 2026 ArchiManager',
-                    style:
-                        TextStyle(color: Color(0xFF4B5563), fontSize: 12)),
+                // Footer
+                Text('© 2026 ArchiManager — Tous droits réservés',
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.2), fontSize: 11)),
               ],
             ),
           ),
-        ),
-        // Droite — formulaire
-        Expanded(
-          flex: 4,
-          child: Container(
-            color: Colors.white,
-            child: Center(child: _buildForm()),
+        ]),
+      ),
+
+      // ── Droite — Formulaire ──
+      Expanded(
+        flex: 45,
+        child: Container(
+          color: const Color(0xFFFAFAFC),
+          child: Center(
+            child: FadeTransition(
+              opacity: _fadeAnim,
+              child: SlideTransition(
+                position: _slideAnim,
+                child: _buildFormCard(),
+              ),
+            ),
           ),
         ),
-      ]);
+      ),
+    ]);
+  }
 
   // ── Mobile ─────────────────────────────────────────────────────────────────
-  Widget _buildMobile() => SingleChildScrollView(
-        child: Column(children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 70, 24, 40),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                  colors: [Color(0xFF1F2937), Color(0xFF111827)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight),
-              borderRadius:
-                  BorderRadius.vertical(bottom: Radius.circular(32)),
-            ),
-            child: Column(children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                    color: kAccent,
-                    borderRadius: BorderRadius.circular(16)),
-                child: const Icon(LucideIcons.building2,
-                    color: Colors.white, size: 32),
-              ),
-              const SizedBox(height: 16),
-              const Text('ArchiManager',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              const Text('Portail Client',
-                  style:
-                      TextStyle(color: Color(0xFF9CA3AF), fontSize: 14)),
+  Widget _buildMobile() {
+    return Stack(children: [
+      // Fond
+      Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0A0E1A), Color(0xFF0F1629)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+      ),
+      Positioned(
+        top: -60,
+        right: -60,
+        child: Container(
+          width: 240,
+          height: 240,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(colors: [
+              kAccent.withOpacity(0.15),
+              Colors.transparent,
             ]),
           ),
-          Padding(
-              padding: const EdgeInsets.all(24), child: _buildForm()),
-        ]),
-      );
-
-  // ── Formulaire commun ──────────────────────────────────────────────────────
-  Widget _buildForm() {
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Connexion',
-                  style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      color: kTextMain)),
-              const SizedBox(height: 6),
-              const Text('Accédez à votre espace projet',
-                  style: TextStyle(color: kTextSub, fontSize: 14)),
-              const SizedBox(height: 36),
-
-              // Email
-              _buildField(
-                controller: _emailCtrl,
-                label: 'Adresse email',
-                hint: 'votre@email.com',
-                icon: LucideIcons.mail,
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 16),
-
-              // Mot de passe
-              _buildField(
-                controller: _passCtrl,
-                label: 'Mot de passe',
-                hint: '••••••••',
-                icon: LucideIcons.lock,
-                obscure: !_showPass,
-                suffix: GestureDetector(
-                  onTap: () => setState(() => _showPass = !_showPass),
-                  child: Icon(
-                    _showPass ? LucideIcons.eyeOff : LucideIcons.eye,
-                    size: 18,
-                    color: kTextSub,
-                  ),
-                ),
-                onSubmit: (_) => _login(),
-              ),
-              const SizedBox(height: 12),
-
-              // Erreur
-              if (_error != null)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: kRed.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(10),
-                    border:
-                        Border.all(color: kRed.withOpacity(0.3)),
-                  ),
-                  child: Row(children: [
-                    Icon(LucideIcons.alertCircle,
-                        size: 14, color: kRed),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: Text(_error!,
-                            style: TextStyle(
-                                color: kRed, fontSize: 13))),
-                  ]),
-                ),
-
-              const SizedBox(height: 24),
-
-              // Bouton connexion
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kAccent,
-                    elevation: 0,
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    disabledBackgroundColor:
-                        kAccent.withOpacity(0.6),
-                  ),
-                  child: _loading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.white),
-                        )
-                      : const Text('Se connecter',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700)),
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Info
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7ED),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFFED7AA)),
-                ),
-                child: const Row(
+        ),
+      ),
+      SafeArea(
+        child: SingleChildScrollView(
+          child: Column(children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(28, 32, 28, 0),
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(LucideIcons.info,
-                        size: 14, color: Color(0xFFD97706)),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Vos identifiants ont été envoyés par email par votre architecte. Contactez-le si vous n\'avez pas reçu d\'email.',
-                        style: TextStyle(
-                            color: Color(0xFF92400E),
-                            fontSize: 12,
-                            height: 1.5),
+                    Row(children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: kAccent,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: kAccent.withOpacity(0.4),
+                              blurRadius: 12,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(LucideIcons.building2,
+                            color: Colors.white, size: 20),
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      const Text('ArchiManager',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800)),
+                    ]),
+                    const SizedBox(height: 36),
+                    Text('Votre projet,',
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.45),
+                            fontSize: 26,
+                            fontWeight: FontWeight.w300,
+                            letterSpacing: -0.5)),
+                    const Text('en temps réel.',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -1.5,
+                            height: 1.1)),
+                    const SizedBox(height: 32),
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+            // Card formulaire
+            FadeTransition(
+              opacity: _fadeAnim,
+              child: SlideTransition(
+                position: _slideAnim,
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                  child: _buildFormCard(),
+                ),
+              ),
+            ),
+          ]),
         ),
+      ),
+    ]);
+  }
+
+  // ── Card formulaire ────────────────────────────────────────────────────────
+  Widget _buildFormCard() {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 420),
+      margin: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(36),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 40,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Titre
+          Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(LucideIcons.logIn, size: 18, color: kAccent),
+            ),
+            const SizedBox(width: 12),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Connexion',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0A0E1A),
+                      letterSpacing: -0.5)),
+              Text('Accédez à votre espace projet',
+                  style: TextStyle(
+                      color: Colors.grey.shade500, fontSize: 12)),
+            ]),
+          ]),
+
+          const SizedBox(height: 32),
+
+          // ── Champ Email ──
+          _buildField(
+            controller: _emailCtrl,
+            label: 'ADRESSE EMAIL',
+            hint: 'votre@email.com',
+            icon: LucideIcons.mail,
+            keyboardType: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: 16),
+
+          // ── Champ Mot de passe ──
+          _buildField(
+            controller: _passCtrl,
+            label: 'MOT DE PASSE',
+            hint: '••••••••',
+            icon: LucideIcons.lock,
+            obscure: !_showPass,
+            suffix: GestureDetector(
+              onTap: () => setState(() => _showPass = !_showPass),
+              child: Icon(
+                _showPass ? LucideIcons.eyeOff : LucideIcons.eye,
+                size: 17,
+                color: Colors.grey.shade400,
+              ),
+            ),
+            onSubmit: (_) => _login(),
+          ),
+
+          // ── Erreur ──
+          if (_error != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Row(children: [
+                const Icon(LucideIcons.alertCircle,
+                    size: 14, color: Color(0xFFEF4444)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(_error!,
+                      style: const TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500)),
+                ),
+              ]),
+            ),
+          ],
+
+          const SizedBox(height: 24),
+
+          // ── Bouton ──
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _loading ? null : _login,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0A0E1A),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                disabledBackgroundColor:
+                    const Color(0xFF0A0E1A).withOpacity(0.5),
+              ),
+              child: _loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('Se connecter',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2)),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(LucideIcons.arrowRight,
+                              size: 12, color: Colors.white),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Divider ──
+          Row(children: [
+            Expanded(child: Divider(color: Colors.grey.shade200)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text('info',
+                  style: TextStyle(
+                      color: Colors.grey.shade400, fontSize: 11)),
+            ),
+            Expanded(child: Divider(color: Colors.grey.shade200)),
+          ]),
+
+          const SizedBox(height: 16),
+
+          // ── Info ──
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(LucideIcons.info,
+                    size: 13, color: Color(0xFFD97706)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Vos identifiants ont été envoyés par votre architecte. Contactez-le si vous n\'avez pas reçu d\'email.',
+                    style: TextStyle(
+                        color: Colors.amber.shade800,
+                        fontSize: 11,
+                        height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  // ── Feature tile (desktop) ─────────────────────────────────────────────────
+  Widget _featureTile(IconData icon, String title, String sub) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          ),
+          child: Icon(icon, color: kAccent, size: 16),
+        ),
+        const SizedBox(width: 14),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          Text(sub,
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.35), fontSize: 11)),
+        ]),
+      ]),
+    );
+  }
+
+  // ── Champ formulaire ───────────────────────────────────────────────────────
   Widget _buildField({
     required TextEditingController controller,
     required String label,
@@ -390,26 +601,30 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(
-                fontSize: 12,
+            style: TextStyle(
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: kTextSub,
-                letterSpacing: 0.3)),
-        const SizedBox(height: 7),
+                color: Colors.grey.shade400,
+                letterSpacing: 0.8)),
+        const SizedBox(height: 8),
         TextField(
           controller: controller,
           keyboardType: keyboardType,
           obscureText: obscure,
           onSubmitted: onSubmit,
-          style: const TextStyle(fontSize: 14, color: kTextMain),
+          style: const TextStyle(
+              fontSize: 14,
+              color: Color(0xFF0A0E1A),
+              fontWeight: FontWeight.w500),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle:
-                const TextStyle(color: Color(0xFFD1D5DB)),
+            hintStyle: TextStyle(
+                color: Colors.grey.shade300,
+                fontSize: 14,
+                fontWeight: FontWeight.w400),
             prefixIcon: Padding(
-              padding:
-                  const EdgeInsets.only(left: 14, right: 10),
-              child: Icon(icon, size: 18, color: kTextSub),
+              padding: const EdgeInsets.only(left: 14, right: 10),
+              child: Icon(icon, size: 16, color: Colors.grey.shade400),
             ),
             prefixIconConstraints:
                 const BoxConstraints(minWidth: 0, minHeight: 0),
@@ -422,8 +637,8 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
                 const BoxConstraints(minWidth: 0, minHeight: 0),
             filled: true,
             fillColor: const Color(0xFFF9FAFB),
-            contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 14),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
                 borderSide:
@@ -434,10 +649,32 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
                     const BorderSide(color: Color(0xFFE5E7EB))),
             focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: kAccent, width: 2)),
+                borderSide: BorderSide(
+                    color: const Color(0xFF0A0E1A), width: 1.5)),
           ),
         ),
       ],
     );
   }
+}
+
+// ── Grid painter décoratif ─────────────────────────────────────────────────
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.025)
+      ..strokeWidth = 0.5;
+
+    const spacing = 48.0;
+    for (double x = 0; x < size.width; x += spacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += spacing) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_) => false;
 }

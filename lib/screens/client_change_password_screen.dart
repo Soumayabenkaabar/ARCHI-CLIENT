@@ -51,15 +51,13 @@ class _ClientChangePasswordScreenState
     setState(() { _loading = true; _error = null; });
 
     try {
-      // 1. Change le mot de passe dans Supabase Auth
-      await Supabase.instance.client.auth.updateUser(
-        UserAttributes(password: newPass),
-      );
-
-      // 2. Marque password_changed = true dans client_portal_access
+      // Met à jour password_raw et marque password_changed = true
       await Supabase.instance.client
           .from('client_portal_access')
-          .update({'password_changed': true})
+          .update({
+            'password_raw':     newPass,
+            'password_changed': true,
+          })
           .eq('id', widget.session.id);
 
       // 3. Met à jour la session locale

@@ -46,12 +46,14 @@ class ClientMessage {
 
 // ── Design System ─────────────────────────────────────────────────────────────
 const _kNavy    = Color(0xFF0B1437);
+const _kNavBar  = Color(0xFF0D1535);
 const _kOrange  = Color(0xFFF97316);
 const _kBg      = Color(0xFFF1F5FF);
 const _kSurface = Colors.white;
 const _kText    = Color(0xFF0B1437);
 const _kMuted   = Color(0xFF64748B);
 const _kBorder  = Color(0xFFE2E8F0);
+const _kSheetRadius = Radius.circular(28);
 
 const _kStatutColors = {
   'en_cours':   Color(0xFF3B82F6),
@@ -78,7 +80,7 @@ class ClientPortalScreen extends StatefulWidget {
 
 class _ClientPortalScreenState extends State<ClientPortalScreen> {
   int _selectedIndex = 0;
-  List<ClientProject> _projects  = [];
+  List<ClientProject>  _projects  = [];
   List<ClientDocument> _documents = [];
   List<ClientMessage>  _messages  = [];
   bool _loading = true;
@@ -88,6 +90,16 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
 
   int get _unreadMsgCount => _messages.where((m) => m.isUnread).length;
   int get _newDocCount    => _documents.where((d) => d.isNew).length;
+
+  static const _navLabels        = ['Accueil', 'Projets', 'Docs', 'Messages', 'Profil'];
+  static const _navLabelsDesktop = ['Accueil', 'Projets', 'Documents', 'Messages', 'Profil'];
+  static const _navIcons = [
+    LucideIcons.layoutDashboard,
+    LucideIcons.folderOpen,
+    LucideIcons.fileText,
+    LucideIcons.messageSquare,
+    LucideIcons.userCircle,
+  ];
 
   @override
   void initState() {
@@ -121,7 +133,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         msgsData.add({ ...m, '_projet_id': p['id'].toString(), '_projet_nom': (p['titre'] as String?) ?? '' });
       }
     }
-    msgsData.sort((a, b) => ((b['created_at'] as String?) ?? '').compareTo((a['created_at'] as String?) ?? ''));
+    msgsData.sort((a, b) =>
+        ((b['created_at'] as String?) ?? '').compareTo((a['created_at'] as String?) ?? ''));
 
     if (!mounted) return;
     setState(() {
@@ -160,15 +173,19 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     } catch (_) { return 'Récemment'; }
   }
 
-  static const _months = ['janv.','févr.','mars','avril','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  static const _months = ['janv.','févr.','mars','avril','mai','juin',
+      'juil.','août','sept.','oct.','nov.','déc.'];
+
   String _formatFullDate(String? iso) {
     if (iso == null || iso.isEmpty) return '';
-    try { final d = DateTime.parse(iso); return '${d.day} ${_months[d.month - 1]}'; } catch (_) { return ''; }
+    try { final d = DateTime.parse(iso); return '${d.day} ${_months[d.month - 1]}'; }
+    catch (_) { return ''; }
   }
 
   static const _docTypeLabels = {
-    'pdf': 'PDF', 'image': 'Image', 'img': 'Image', 'jpg': 'Image', 'jpeg': 'Image', 'png': 'Image',
-    'dwg': 'Plan', 'cad': 'Plan', 'docx': 'Word', 'doc': 'Word', 'xlsx': 'Excel', 'xls': 'Excel',
+    'pdf': 'PDF', 'image': 'Image', 'img': 'Image', 'jpg': 'Image',
+    'jpeg': 'Image', 'png': 'Image', 'dwg': 'Plan', 'cad': 'Plan',
+    'docx': 'Word', 'doc': 'Word', 'xlsx': 'Excel', 'xls': 'Excel',
   };
 
   IconData _docIcon(String type) {
@@ -202,7 +219,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     'chef_projet': 'Chef de projet', 'chef': 'Chef de projet',
   };
   static const _avatarColors = [
-    Color(0xFFF97316), Color(0xFF3B82F6), Color(0xFF10B981), Color(0xFF8B5CF6), Color(0xFFEF4444),
+    Color(0xFFF97316), Color(0xFF3B82F6), Color(0xFF10B981),
+    Color(0xFF8B5CF6), Color(0xFFEF4444),
   ];
 
   String _initials(String name) {
@@ -210,12 +228,13 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     return name.isNotEmpty ? name[0].toUpperCase() : '?';
   }
+
   Color _avatarColor(String name) =>
       _avatarColors[name.codeUnits.fold(0, (a, b) => a + b) % _avatarColors.length];
 
   ClientMessage _mapMessage(Map<String, dynamic> d) {
-    final auteur = (d['auteur'] as String?) ?? 'Inconnu';
-    final role   = (d['role']   as String?) ?? 'client';
+    final auteur     = (d['auteur'] as String?) ?? 'Inconnu';
+    final role       = (d['role']   as String?) ?? 'client';
     final createdIso = (d['created_at'] as String?) ?? '';
     int createdMs = 0;
     try { createdMs = DateTime.parse(createdIso).millisecondsSinceEpoch; } catch (_) {}
@@ -225,18 +244,11 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       time: _relativeDate(createdIso),
       isUnread: createdMs > 0 && createdMs > _lastMsgRead.millisecondsSinceEpoch,
       avatarColor: _avatarColor(auteur),
-      projetId: (d['_projet_id'] as String?) ?? '', projetNom: (d['_projet_nom'] as String?) ?? '',
+      projetId: (d['_projet_id'] as String?) ?? '',
+      projetNom: (d['_projet_nom'] as String?) ?? '',
       createdAtMs: createdMs,
     );
   }
-
-  final List<(IconData, String)> _navItems = const [
-    (LucideIcons.layoutDashboard, 'Accueil'),
-    (LucideIcons.folderOpen, 'Projets'),
-    (LucideIcons.fileText, 'Documents'),
-    (LucideIcons.messageSquare, 'Messages'),
-    (LucideIcons.userCircle, 'Profil'),
-  ];
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BUILD
@@ -247,7 +259,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     if (!_loading && _projects.isEmpty) return _buildNoProjectScreen();
     final isWide = MediaQuery.of(context).size.width > 860;
     return Scaffold(
-      backgroundColor: _kBg,
+      backgroundColor: _kNavy,
       body: isWide ? _buildDesktop() : _buildMobile(),
     );
   }
@@ -276,7 +288,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         ),
         const SizedBox(height: 28),
         const Text('Projet en cours d\'assignation',
-          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+          style: TextStyle(color: Colors.white, fontSize: 22,
+              fontWeight: FontWeight.w800, letterSpacing: -0.5),
           textAlign: TextAlign.center),
         const SizedBox(height: 12),
         Text('Votre architecte va associer votre projet.\nContactez-le pour plus d\'informations.',
@@ -286,7 +299,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         TextButton.icon(
           onPressed: _logout,
           icon: Icon(LucideIcons.logOut, size: 14, color: Colors.white.withOpacity(0.4)),
-          label: Text('Déconnexion', style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 13)),
+          label: Text('Déconnexion',
+              style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 13)),
         ),
       ]),
     ))),
@@ -319,13 +333,10 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   // NAVIGATION
   // ══════════════════════════════════════════════════════════════════════════
 
-  // ── Top bar desktop ───────────────────────────────────────────────────────
   Widget _buildTopBar() => Container(
-    height: 62,
-    color: _kNavy,
+    height: 62, color: _kNavy,
     padding: const EdgeInsets.symmetric(horizontal: 32),
     child: Row(children: [
-      // Logo
       Row(children: [
         Container(
           width: 32, height: 32,
@@ -333,13 +344,12 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
           child: const Icon(LucideIcons.building2, color: Colors.white, size: 17),
         ),
         const SizedBox(width: 10),
-        const Text('Portail Client', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+        const Text('Portail Client',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
       ]),
       const SizedBox(width: 40),
-      // Nav
-      Expanded(child: Row(children: List.generate(_navItems.length, (i) {
-        final (icon, label) = _navItems[i];
-        final sel = i == _selectedIndex;
+      Expanded(child: Row(children: List.generate(_navIcons.length, (i) {
+        final sel   = i == _selectedIndex;
         final badge = i == 3 ? _unreadMsgCount : (i == 2 ? _newDocCount : 0);
         return GestureDetector(
           onTap: () => _onTabSelected(i),
@@ -354,9 +364,11 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                 border: sel ? Border.all(color: _kOrange.withOpacity(0.3)) : null,
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon, size: 14, color: sel ? _kOrange : Colors.white.withOpacity(0.5)),
+                Icon(_navIcons[i], size: 14,
+                    color: sel ? _kOrange : Colors.white.withOpacity(0.5)),
                 const SizedBox(width: 6),
-                Text(label, style: TextStyle(fontSize: 13, fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                Text(_navLabelsDesktop[i], style: TextStyle(fontSize: 13,
+                    fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
                     color: sel ? _kOrange : Colors.white.withOpacity(0.5))),
               ]),
             ),
@@ -364,12 +376,12 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
               child: Container(
                 width: 16, height: 16,
                 decoration: const BoxDecoration(color: Color(0xFFEF4444), shape: BoxShape.circle),
-                child: Center(child: Text('$badge', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800))),
+                child: Center(child: Text('$badge', style: const TextStyle(
+                    color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800))),
               )),
           ]),
         );
       }))),
-      // Logout
       GestureDetector(
         onTap: _logout,
         child: Container(
@@ -382,20 +394,23 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
           child: Row(children: [
             Icon(LucideIcons.logOut, size: 14, color: Colors.white.withOpacity(0.5)),
             const SizedBox(width: 6),
-            Text('Déconnexion', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5), fontWeight: FontWeight.w500)),
+            Text('Déconnexion', style: TextStyle(fontSize: 12,
+                color: Colors.white.withOpacity(0.5), fontWeight: FontWeight.w500)),
           ]),
         ),
       ),
     ]),
   );
 
-  // ── Mobile header ─────────────────────────────────────────────────────────
   Widget _buildMobileHeader() => Container(
     decoration: BoxDecoration(
       color: _kNavy,
-      boxShadow: [BoxShadow(color: _kNavy.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4))],
+      boxShadow: [BoxShadow(color: _kNavy.withOpacity(0.3),
+          blurRadius: 12, offset: const Offset(0, 4))],
     ),
-    padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 10, left: 20, right: 20, bottom: 14),
+    padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 10,
+        left: 20, right: 20, bottom: 14),
     child: Row(children: [
       Container(
         width: 34, height: 34,
@@ -405,37 +420,21 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       const SizedBox(width: 10),
       const Expanded(child: Text('Portail Client',
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white))),
-      GestureDetector(
-        onTap: () => _onTabSelected(4),
-        child: Container(
-          width: 36, height: 36,
-          decoration: BoxDecoration(
-            color: _kOrange,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [BoxShadow(color: _kOrange.withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 3))],
-          ),
-          child: Center(child: Text(_initials(widget.session.clientNom),
-              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800))),
-        ),
-      ),
     ]),
   );
 
   // ── Bottom nav ────────────────────────────────────────────────────────────
-  Widget _buildBottomNav() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: _kNavy,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [BoxShadow(color: Color(0x22000000), blurRadius: 20, offset: Offset(0, -4))],
-      ),
-      padding: EdgeInsets.only(
-        top: 10,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
-      ),
-      child: Row(children: List.generate(_navItems.length, (i) {
-        final (icon, label) = _navItems[i];
-        final sel = i == _selectedIndex;
+  Widget _buildBottomNav() => Container(
+    decoration: const BoxDecoration(
+      color: _kNavBar,
+      boxShadow: [BoxShadow(color: Color(0x30000000),
+          blurRadius: 16, offset: Offset(0, -2))],
+    ),
+    padding: EdgeInsets.only(
+        top: 10, bottom: MediaQuery.of(context).padding.bottom + 8),
+    child: Row(
+      children: List.generate(_navIcons.length, (i) {
+        final sel   = i == _selectedIndex;
         final badge = i == 3 ? _unreadMsgCount : (i == 2 ? _newDocCount : 0);
         return Expanded(
           child: GestureDetector(
@@ -445,31 +444,49 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
               Column(mainAxisSize: MainAxisSize.min, children: [
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  width: sel ? 44 : 40,
-                  height: sel ? 32 : 28,
+                  curve: Curves.easeInOut,
+                  width: 44, height: 32,
                   decoration: BoxDecoration(
-                    color: sel ? _kOrange.withOpacity(0.18) : Colors.transparent,
+                    color: sel ? _kOrange.withOpacity(0.15) : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(icon, size: 20, color: sel ? _kOrange : Colors.white.withOpacity(0.38)),
+                  child: Icon(_navIcons[i], size: 20,
+                      color: sel ? _kOrange : Colors.white.withOpacity(0.30)),
                 ),
                 const SizedBox(height: 4),
-                Text(label, style: TextStyle(
-                  fontSize: 9, fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
-                  color: sel ? _kOrange : Colors.white.withOpacity(0.35),
-                )),
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 200),
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                    color: sel ? _kOrange : Colors.white.withOpacity(0.30),
+                  ),
+                  child: Text(_navLabels[i]),
+                ),
               ]),
-              if (badge > 0) Positioned(top: 0, right: (MediaQuery.of(context).size.width / _navItems.length - 44) / 2 + 2,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(color: const Color(0xFFEF4444), borderRadius: BorderRadius.circular(8)),
-                  child: Text('$badge', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
-                )),
+              if (badge > 0)
+                Positioned(
+                  top: 0,
+                  right: _badgeOffset(context),
+                  child: Container(
+                    width: 16, height: 16,
+                    decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444), shape: BoxShape.circle),
+                    child: Center(child: Text(badge > 9 ? '9+' : '$badge',
+                        style: const TextStyle(color: Colors.white,
+                            fontSize: 8, fontWeight: FontWeight.w800, height: 1.0))),
+                  ),
+                ),
             ]),
           ),
         );
-      })),
-    );
+      }),
+    ),
+  );
+
+  double _badgeOffset(BuildContext context) {
+    final itemW = MediaQuery.of(context).size.width / _navIcons.length;
+    return (itemW - 44) / 2 - 2;
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -479,30 +496,38 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   Widget _buildDashboard({required bool isWide}) => SingleChildScrollView(
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildHero(),
-      Padding(
-        padding: EdgeInsets.fromLTRB(isWide ? 32 : 18, 24, isWide ? 32 : 18, 40),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _sectionHeader('Mes Projets', () => _onTabSelected(1)),
-          const SizedBox(height: 14),
-          if (_loading)
-            _loadingWidget()
-          else if (_projects.isEmpty)
-            _emptyInline('Aucun projet trouvé')
-          else
-            ..._projects.map(_buildProjectCard),
-          const SizedBox(height: 28),
-          if (isWide)
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: _buildRecentDocs()),
-              const SizedBox(width: 18),
-              Expanded(child: _buildRecentMsgs()),
-            ])
-          else ...[
-            _buildRecentDocs(),
-            const SizedBox(height: 18),
-            _buildRecentMsgs(),
-          ],
-        ]),
+      // ✅ Transform.translate au lieu de margin négative
+      Transform.translate(
+        offset: const Offset(0, -20),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: _kBg,
+            borderRadius: BorderRadius.vertical(top: _kSheetRadius),
+          ),
+          padding: EdgeInsets.fromLTRB(isWide ? 32 : 18, 24, isWide ? 32 : 18, 40),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sectionHeader('Mes Projets', () => _onTabSelected(1)),
+            const SizedBox(height: 14),
+            if (_loading)
+              _loadingWidget()
+            else if (_projects.isEmpty)
+              _emptyInline('Aucun projet trouvé')
+            else
+              ..._projects.map(_buildProjectCard),
+            const SizedBox(height: 28),
+            if (isWide)
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(child: _buildRecentDocs()),
+                const SizedBox(width: 18),
+                Expanded(child: _buildRecentMsgs()),
+              ])
+            else ...[
+              _buildRecentDocs(),
+              const SizedBox(height: 18),
+              _buildRecentMsgs(),
+            ],
+          ]),
+        ),
       ),
     ]),
   );
@@ -519,55 +544,45 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     child: Stack(children: [
       Positioned(right: -30, top: -30, child: Container(
         width: 160, height: 160,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(colors: [_kOrange.withOpacity(0.15), _kOrange.withOpacity(0)]),
-        ),
+        decoration: BoxDecoration(shape: BoxShape.circle,
+          gradient: RadialGradient(
+              colors: [_kOrange.withOpacity(0.15), _kOrange.withOpacity(0)])),
       )),
       Positioned(left: -50, bottom: -20, child: Container(
         width: 180, height: 180,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(colors: [const Color(0xFF3B82F6).withOpacity(0.12), const Color(0xFF3B82F6).withOpacity(0)]),
-        ),
+        decoration: BoxDecoration(shape: BoxShape.circle,
+          gradient: RadialGradient(colors: [
+            const Color(0xFF3B82F6).withOpacity(0.12),
+            const Color(0xFF3B82F6).withOpacity(0),
+          ])),
       )),
       SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 44),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Bonjour,', style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.5), fontWeight: FontWeight.w400)),
-                const SizedBox(height: 3),
-                Text(widget.session.clientNom,
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.6, height: 1.1),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Bonjour,', style: TextStyle(fontSize: 13,
+                  color: Colors.white.withOpacity(0.5), fontWeight: FontWeight.w400)),
+              const SizedBox(height: 3),
+              Text(widget.session.clientNom,
+                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800,
+                      color: Colors.white, letterSpacing: -0.6, height: 1.1),
                   maxLines: 1, overflow: TextOverflow.ellipsis),
-              ])),
-              GestureDetector(
-                onTap: () => _onTabSelected(4),
-                child: Container(
-                  width: 46, height: 46,
-                  decoration: BoxDecoration(
-                    color: _kOrange,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: _kOrange.withOpacity(0.45), blurRadius: 16, offset: const Offset(0, 5))],
-                  ),
-                  child: Center(child: Text(_initials(widget.session.clientNom),
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
-                ),
-              ),
             ]),
             const SizedBox(height: 24),
             Row(children: [
-              _heroChip('${_projects.length}', 'Projets', LucideIcons.folderOpen, _kOrange, () => _onTabSelected(1)),
+              _heroChip('${_projects.length}', 'Projets',
+                  LucideIcons.folderOpen, _kOrange, () => _onTabSelected(1)),
               const SizedBox(width: 10),
-              _heroChip('${_documents.length}', 'Documents', LucideIcons.fileText, const Color(0xFF60A5FA), () => _onTabSelected(2)),
+              _heroChip('${_documents.length}', 'Documents',
+                  LucideIcons.fileText, const Color(0xFF60A5FA), () => _onTabSelected(2)),
               const SizedBox(width: 10),
               _heroChip(
                 _unreadMsgCount > 0 ? '$_unreadMsgCount' : '${_messages.length}',
                 _unreadMsgCount > 0 ? 'Non lus' : 'Messages',
-                LucideIcons.messageSquare, const Color(0xFFA78BFA), () => _onTabSelected(3)),
+                LucideIcons.messageSquare, const Color(0xFFA78BFA), () => _onTabSelected(3),
+              ),
             ]),
           ]),
         ),
@@ -575,40 +590,45 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     ]),
   );
 
-  Widget _heroChip(String count, String label, IconData icon, Color color, VoidCallback onTap) =>
-    Expanded(child: GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(0.09)),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            width: 30, height: 30,
-            decoration: BoxDecoration(color: color.withOpacity(0.18), borderRadius: BorderRadius.circular(9)),
-            child: Icon(icon, size: 15, color: color),
+  Widget _heroChip(String count, String label, IconData icon,
+      Color color, VoidCallback onTap) =>
+      Expanded(child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withOpacity(0.09)),
           ),
-          const SizedBox(height: 10),
-          Text(count, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
-          const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.45), fontWeight: FontWeight.w500)),
-        ]),
-      ),
-    ));
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(color: color.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(9)),
+              child: Icon(icon, size: 15, color: color),
+            ),
+            const SizedBox(height: 10),
+            Text(count, style: const TextStyle(fontSize: 22,
+                fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 10,
+                color: Colors.white.withOpacity(0.45), fontWeight: FontWeight.w500)),
+          ]),
+        ),
+      ));
 
-  // ── Section header ────────────────────────────────────────────────────────
   Widget _sectionHeader(String title, [VoidCallback? onTap]) => Row(
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
-      Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: _kText, letterSpacing: -0.4)),
+      Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800,
+          color: _kText, letterSpacing: -0.4)),
       if (onTap != null)
         GestureDetector(
           onTap: onTap,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text('Voir tout', style: TextStyle(fontSize: 13, color: _kOrange.withOpacity(0.9), fontWeight: FontWeight.w600)),
+            Text('Voir tout', style: TextStyle(fontSize: 13,
+                color: _kOrange.withOpacity(0.9), fontWeight: FontWeight.w600)),
             const SizedBox(width: 3),
             Icon(LucideIcons.arrowRight, size: 13, color: _kOrange.withOpacity(0.9)),
           ]),
@@ -616,19 +636,19 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     ],
   );
 
-  // ── Project card ──────────────────────────────────────────────────────────
   Widget _buildProjectCard(ClientProject project) {
     final sc = _kStatutColors[project.statut] ?? _kOrange;
     return GestureDetector(
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientProjectDetailScreen(
-        projetId: project.id, projetNom: project.name, clientEmail: widget.session.clientEmail,
-      ))),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => ClientProjectDetailScreen(
+            projetId: project.id, projetNom: project.name,
+            clientEmail: widget.session.clientEmail,
+          ))),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: _kSurface,
-          borderRadius: BorderRadius.circular(18),
+          color: _kSurface, borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(color: sc.withOpacity(0.10), blurRadius: 18, offset: const Offset(0, 6)),
             const BoxShadow(color: Color(0x06000000), blurRadius: 6, offset: Offset(0, 2)),
@@ -637,16 +657,20 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Expanded(child: Text(project.name,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _kText, letterSpacing: -0.3),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700,
+                    color: _kText, letterSpacing: -0.3),
                 maxLines: 1, overflow: TextOverflow.ellipsis)),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(color: sc.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+              decoration: BoxDecoration(color: sc.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20)),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(width: 6, height: 6, decoration: BoxDecoration(color: sc, shape: BoxShape.circle)),
+                Container(width: 6, height: 6,
+                    decoration: BoxDecoration(color: sc, shape: BoxShape.circle)),
                 const SizedBox(width: 5),
-                Text(project.phase, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: sc)),
+                Text(project.phase, style: TextStyle(fontSize: 10,
+                    fontWeight: FontWeight.w700, color: sc)),
               ]),
             ),
           ]),
@@ -654,19 +678,21 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
           Row(children: [
             Icon(LucideIcons.clock, size: 11, color: _kMuted.withOpacity(0.6)),
             const SizedBox(width: 4),
-            Text(project.lastUpdate, style: TextStyle(fontSize: 11, color: _kMuted.withOpacity(0.7))),
+            Text(project.lastUpdate,
+                style: TextStyle(fontSize: 11, color: _kMuted.withOpacity(0.7))),
           ]),
           const SizedBox(height: 16),
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text('Avancement', style: TextStyle(fontSize: 11, color: _kMuted, fontWeight: FontWeight.w500)),
-            Text('${project.progress}%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: sc)),
+            Text('Avancement', style: TextStyle(fontSize: 11,
+                color: _kMuted, fontWeight: FontWeight.w500)),
+            Text('${project.progress}%', style: TextStyle(fontSize: 13,
+                fontWeight: FontWeight.w900, color: sc)),
           ]),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
-              value: project.progress / 100,
-              minHeight: 7,
+              value: project.progress / 100, minHeight: 7,
               backgroundColor: const Color(0xFFF1F5FF),
               valueColor: AlwaysStoppedAnimation<Color>(sc),
             ),
@@ -676,13 +702,13 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     );
   }
 
-  // ── Recent docs card ──────────────────────────────────────────────────────
   Widget _buildRecentDocs() => _card(
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _sectionHeader('Documents récents', () => _onTabSelected(2)),
       const SizedBox(height: 16),
       if (_loading) _loadingWidget()
-      else if (_docsError != null) Text('Erreur', style: TextStyle(fontSize: 12, color: Colors.red.shade400))
+      else if (_docsError != null)
+        Text('Erreur', style: TextStyle(fontSize: 12, color: Colors.red.shade400))
       else if (_documents.isEmpty) _emptyInline('Aucun document')
       else ..._documents.take(4).toList().asMap().entries.map((e) => Column(children: [
         if (e.key > 0) const Divider(height: 16, color: _kBorder),
@@ -694,27 +720,32 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   Widget _docRow(ClientDocument doc) {
     final cc = _kDocColors[doc.category] ?? _kOrange;
     return Row(children: [
-      Container(
-        width: 38, height: 38,
-        decoration: BoxDecoration(color: cc.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-        child: Icon(doc.icon, size: 17, color: cc),
-      ),
+      Container(width: 38, height: 38,
+          decoration: BoxDecoration(color: cc.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10)),
+          child: Icon(doc.icon, size: 17, color: cc)),
       const SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(doc.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _kText), maxLines: 1, overflow: TextOverflow.ellipsis),
+        Text(doc.name, style: const TextStyle(fontSize: 12,
+            fontWeight: FontWeight.w600, color: _kText),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
         const SizedBox(height: 3),
         Row(children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: cc.withOpacity(0.1), borderRadius: BorderRadius.circular(5)),
-            child: Text(doc.category, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: cc)),
+            decoration: BoxDecoration(color: cc.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(5)),
+            child: Text(doc.category, style: TextStyle(fontSize: 9,
+                fontWeight: FontWeight.w700, color: cc)),
           ),
           if (doc.isNew) ...[
             const SizedBox(width: 5),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: const Color(0xFF10B981), borderRadius: BorderRadius.circular(5)),
-              child: const Text('NOUVEAU', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800)),
+              decoration: BoxDecoration(color: const Color(0xFF10B981),
+                  borderRadius: BorderRadius.circular(5)),
+              child: const Text('NOUVEAU', style: TextStyle(color: Colors.white,
+                  fontSize: 8, fontWeight: FontWeight.w800)),
             ),
           ] else if (doc.date.isNotEmpty) ...[
             const SizedBox(width: 6),
@@ -725,10 +756,10 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     ]);
   }
 
-  // ── Recent messages card ──────────────────────────────────────────────────
   Widget _buildRecentMsgs() => _card(
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _sectionHeader('Messages récents', _messages.isNotEmpty ? () => _onTabSelected(3) : null),
+      _sectionHeader('Messages récents',
+          _messages.isNotEmpty ? () => _onTabSelected(3) : null),
       const SizedBox(height: 16),
       if (_loading) _loadingWidget()
       else if (_messages.isEmpty) _emptyInline('Aucun message')
@@ -744,27 +775,35 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     child: Row(children: [
       Stack(clipBehavior: Clip.none, children: [
         CircleAvatar(radius: 18, backgroundColor: msg.avatarColor,
-          child: Text(msg.initials, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
+          child: Text(msg.initials, style: const TextStyle(color: Colors.white,
+              fontSize: 12, fontWeight: FontWeight.w700))),
         if (msg.isUnread) Positioned(bottom: 0, right: 0,
-          child: Container(width: 9, height: 9, decoration: BoxDecoration(
-            color: const Color(0xFFEF4444), shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 1.5)))),
+          child: Container(width: 9, height: 9,
+            decoration: BoxDecoration(color: const Color(0xFFEF4444),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5)))),
       ]),
       const SizedBox(width: 10),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Expanded(child: Text(msg.senderName, style: TextStyle(fontSize: 12, fontWeight: msg.isUnread ? FontWeight.w800 : FontWeight.w600, color: _kText), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          Expanded(child: Text(msg.senderName, style: TextStyle(fontSize: 12,
+              fontWeight: msg.isUnread ? FontWeight.w800 : FontWeight.w600, color: _kText),
+              maxLines: 1, overflow: TextOverflow.ellipsis)),
           if (msg.isUnread)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: const Color(0xFFEF4444), borderRadius: BorderRadius.circular(6)),
-              child: const Text('NOUVEAU', style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800)),
+              decoration: BoxDecoration(color: const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(6)),
+              child: const Text('NOUVEAU', style: TextStyle(color: Colors.white,
+                  fontSize: 7, fontWeight: FontWeight.w800)),
             )
           else
             Text(msg.time, style: const TextStyle(fontSize: 10, color: _kMuted)),
         ]),
         const SizedBox(height: 2),
-        Text(msg.preview, style: TextStyle(fontSize: 11, color: _kMuted, fontWeight: msg.isUnread ? FontWeight.w500 : FontWeight.w400), maxLines: 1, overflow: TextOverflow.ellipsis),
+        Text(msg.preview, style: TextStyle(fontSize: 11, color: _kMuted,
+            fontWeight: msg.isUnread ? FontWeight.w500 : FontWeight.w400),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
       ])),
       const SizedBox(width: 4),
       Icon(LucideIcons.chevronRight, size: 13, color: _kMuted.withOpacity(0.4)),
@@ -772,57 +811,107 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   );
 
   // ══════════════════════════════════════════════════════════════════════════
-  // TABS
+  // TABS — style "sheet arrondie" identique au dashboard
   // ══════════════════════════════════════════════════════════════════════════
 
-  Widget _buildProjectsTab() => Column(children: [
-    _tabHeader('Mes Projets', '${_projects.length} projet${_projects.length > 1 ? 's' : ''}', _kOrange, LucideIcons.folderOpen),
-    Expanded(child: _loading ? _loadingWidget()
-      : _projects.isEmpty ? _emptyState('Aucun projet assigné', LucideIcons.folderOpen)
-      : ListView.builder(padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
-          itemCount: _projects.length, itemBuilder: (_, i) => _buildProjectCard(_projects[i]))),
-  ]);
-
-  Widget _buildDocumentsTab() => Column(children: [
-    _tabHeader('Documents', '${_documents.length} fichier${_documents.length > 1 ? 's' : ''}', const Color(0xFF3B82F6), LucideIcons.fileText),
-    Expanded(child: _loading ? _loadingWidget()
-      : _docsError != null ? Center(child: Text('Erreur : $_docsError', style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13)))
-      : _documents.isEmpty ? _emptyState('Aucun document', LucideIcons.fileText)
-      : ListView.builder(padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
-          itemCount: _documents.length, itemBuilder: (_, i) => _buildDocumentTile(_documents[i]))),
-  ]);
-
-  Widget _buildMessagesTab() => Column(children: [
-    _tabHeader('Messages',
-      _unreadMsgCount > 0 ? '$_unreadMsgCount non lu${_unreadMsgCount > 1 ? 's' : ''}' : '${_messages.length} message${_messages.length > 1 ? 's' : ''}',
-      const Color(0xFFEF4444), LucideIcons.messageSquare),
-    Expanded(child: _loading ? _loadingWidget()
-      : _messages.isEmpty ? _emptyState('Aucun message', LucideIcons.messageSquare)
-      : ListView.builder(padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
-          itemCount: _messages.length, itemBuilder: (_, i) => _buildMessageTile(_messages[i]))),
-  ]);
-
-  Widget _tabHeader(String title, String sub, Color color, IconData icon) => Container(
-    padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-    decoration: BoxDecoration(
-      color: _kNavy,
-      boxShadow: [BoxShadow(color: _kNavy.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 3))],
-    ),
-    child: Row(children: [
+  // ── Tab header navy ───────────────────────────────────────────────────────
+  Widget _tabHeader(String title, String sub, Color color, IconData icon) =>
       Container(
-        width: 42, height: 42,
-        decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.2))),
-        child: Icon(icon, size: 20, color: color),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
+        color: _kNavy,
+        child: Row(children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withOpacity(0.2)),
+            ),
+            child: Icon(icon, size: 20, color: color),
+          ),
+          const SizedBox(width: 14),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(fontSize: 17,
+                fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.4)),
+            const SizedBox(height: 2),
+            Text(sub, style: TextStyle(fontSize: 11, color: color,
+                fontWeight: FontWeight.w600)),
+          ]),
+        ]),
+      );
+
+  // ── Sheet commune ─────────────────────────────────────────────────────────
+  // ✅ Transform.translate — pas de margin négative (interdit par Flutter)
+  Widget _tabSheetContent(Widget child) => Expanded(
+    child: Transform.translate(
+      offset: const Offset(0, -24),
+      child: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          color: _kBg,
+          borderRadius: BorderRadius.vertical(top: _kSheetRadius),
+        ),
+        child: child,
       ),
-      const SizedBox(width: 14),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.4)),
-        const SizedBox(height: 2),
-        Text(sub, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
-      ]),
-    ]),
+    ),
   );
+
+  // ── Projets ───────────────────────────────────────────────────────────────
+  Widget _buildProjectsTab() => Column(children: [
+    _tabHeader('Mes Projets',
+        '${_projects.length} projet${_projects.length > 1 ? 's' : ''}',
+        _kOrange, LucideIcons.folderOpen),
+    _tabSheetContent(
+      _loading
+          ? _loadingWidget()
+          : _projects.isEmpty
+              ? _emptyState('Aucun projet assigné', LucideIcons.folderOpen)
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
+                  itemCount: _projects.length,
+                  itemBuilder: (_, i) => _buildProjectCard(_projects[i])),
+    ),
+  ]);
+
+  // ── Documents ─────────────────────────────────────────────────────────────
+  Widget _buildDocumentsTab() => Column(children: [
+    _tabHeader('Documents',
+        '${_documents.length} fichier${_documents.length > 1 ? 's' : ''}',
+        const Color(0xFF3B82F6), LucideIcons.fileText),
+    _tabSheetContent(
+      _loading
+          ? _loadingWidget()
+          : _docsError != null
+              ? Center(child: Text('Erreur : $_docsError',
+                  style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13)))
+              : _documents.isEmpty
+                  ? _emptyState('Aucun document', LucideIcons.fileText)
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
+                      itemCount: _documents.length,
+                      itemBuilder: (_, i) => _buildDocumentTile(_documents[i])),
+    ),
+  ]);
+
+  // ── Messages ──────────────────────────────────────────────────────────────
+  Widget _buildMessagesTab() => Column(children: [
+    _tabHeader(
+      'Messages',
+      _unreadMsgCount > 0
+          ? '$_unreadMsgCount non lu${_unreadMsgCount > 1 ? 's' : ''}'
+          : '${_messages.length} message${_messages.length > 1 ? 's' : ''}',
+      const Color(0xFFEF4444), LucideIcons.messageSquare,
+    ),
+    _tabSheetContent(
+      _loading
+          ? _loadingWidget()
+          : _messages.isEmpty
+              ? _emptyState('Aucun message', LucideIcons.messageSquare)
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
+                  itemCount: _messages.length,
+                  itemBuilder: (_, i) => _buildMessageTile(_messages[i])),
+    ),
+  ]);
 
   // ── Document tile ─────────────────────────────────────────────────────────
   Widget _buildDocumentTile(ClientDocument doc) {
@@ -832,30 +921,36 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: _kSurface, borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Color(0x07000000), blurRadius: 8, offset: Offset(0, 2))],
+        boxShadow: const [BoxShadow(color: Color(0x07000000),
+            blurRadius: 8, offset: Offset(0, 2))],
       ),
       child: Row(children: [
-        Container(
-          width: 44, height: 44,
-          decoration: BoxDecoration(color: cc.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-          child: Icon(doc.icon, size: 20, color: cc),
-        ),
+        Container(width: 44, height: 44,
+            decoration: BoxDecoration(color: cc.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12)),
+            child: Icon(doc.icon, size: 20, color: cc)),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(doc.name, style: TextStyle(fontSize: 13, fontWeight: doc.isNew ? FontWeight.w700 : FontWeight.w600, color: _kText), maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(doc.name, style: TextStyle(fontSize: 13,
+              fontWeight: doc.isNew ? FontWeight.w700 : FontWeight.w600, color: _kText),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 5),
           Row(children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(color: cc.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-              child: Text(doc.category, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: cc)),
+              decoration: BoxDecoration(color: cc.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6)),
+              child: Text(doc.category, style: TextStyle(fontSize: 9,
+                  fontWeight: FontWeight.w800, color: cc)),
             ),
             if (doc.isNew) ...[
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(color: const Color(0xFF10B981), borderRadius: BorderRadius.circular(6)),
-                child: const Text('NOUVEAU', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800)),
+                decoration: BoxDecoration(color: const Color(0xFF10B981),
+                    borderRadius: BorderRadius.circular(6)),
+                child: const Text('NOUVEAU', style: TextStyle(color: Colors.white,
+                    fontSize: 8, fontWeight: FontWeight.w800)),
               ),
             ] else if (doc.date.isNotEmpty) ...[
               const SizedBox(width: 8),
@@ -874,43 +969,52 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _kSurface,
-        borderRadius: BorderRadius.circular(16),
+        color: _kSurface, borderRadius: BorderRadius.circular(16),
         border: msg.isUnread ? Border.all(color: _kOrange.withOpacity(0.2)) : null,
         boxShadow: [
-          if (msg.isUnread) BoxShadow(color: _kOrange.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4)),
+          if (msg.isUnread) BoxShadow(color: _kOrange.withOpacity(0.08),
+              blurRadius: 12, offset: const Offset(0, 4)),
           const BoxShadow(color: Color(0x07000000), blurRadius: 8, offset: Offset(0, 2)),
         ],
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Stack(clipBehavior: Clip.none, children: [
           CircleAvatar(radius: 20, backgroundColor: msg.avatarColor,
-            child: Text(msg.initials, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800))),
+            child: Text(msg.initials, style: const TextStyle(color: Colors.white,
+                fontSize: 13, fontWeight: FontWeight.w800))),
           if (msg.isUnread) Positioned(bottom: 0, right: 0,
             child: Container(width: 11, height: 11,
-              decoration: BoxDecoration(color: const Color(0xFFEF4444), shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5)))),
+              decoration: BoxDecoration(color: const Color(0xFFEF4444),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5)))),
         ]),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Expanded(child: Text(msg.senderName, style: TextStyle(fontSize: 13, fontWeight: msg.isUnread ? FontWeight.w800 : FontWeight.w600, color: _kText), maxLines: 1, overflow: TextOverflow.ellipsis)),
+            Expanded(child: Text(msg.senderName, style: TextStyle(fontSize: 13,
+                fontWeight: msg.isUnread ? FontWeight.w800 : FontWeight.w600, color: _kText),
+                maxLines: 1, overflow: TextOverflow.ellipsis)),
             if (msg.isUnread)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(color: _kOrange, borderRadius: BorderRadius.circular(8)),
-                child: const Text('NOUVEAU', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800)),
+                decoration: BoxDecoration(color: _kOrange,
+                    borderRadius: BorderRadius.circular(8)),
+                child: const Text('NOUVEAU', style: TextStyle(color: Colors.white,
+                    fontSize: 8, fontWeight: FontWeight.w800)),
               )
             else
               Text(msg.time, style: const TextStyle(fontSize: 10, color: _kMuted)),
           ]),
           if (msg.projetNom.isNotEmpty) ...[
             const SizedBox(height: 2),
-            Text(msg.projetNom, style: TextStyle(fontSize: 10, color: _kOrange.withOpacity(0.8), fontWeight: FontWeight.w600)),
+            Text(msg.projetNom, style: TextStyle(fontSize: 10,
+                color: _kOrange.withOpacity(0.8), fontWeight: FontWeight.w600)),
           ],
           const SizedBox(height: 4),
-          Text(msg.preview, style: TextStyle(fontSize: 12, color: msg.isUnread ? const Color(0xFF1E293B) : _kMuted,
-              fontWeight: msg.isUnread ? FontWeight.w500 : FontWeight.w400), maxLines: 2, overflow: TextOverflow.ellipsis),
+          Text(msg.preview, style: TextStyle(fontSize: 12,
+              color: msg.isUnread ? const Color(0xFF1E293B) : _kMuted,
+              fontWeight: msg.isUnread ? FontWeight.w500 : FontWeight.w400),
+              maxLines: 2, overflow: TextOverflow.ellipsis),
           if (msg.isUnread) ...[
             const SizedBox(height: 4),
             Text(msg.time, style: const TextStyle(fontSize: 10, color: _kMuted)),
@@ -928,49 +1032,57 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
 
   Widget _buildProfileTab() => SingleChildScrollView(
     child: Column(children: [
-      // Banner navy
+      // Bannière navy
       Container(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(20, 32, 20, 56),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0B1437), Color(0xFF162050)],
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
-          ),
-        ),
+        padding: const EdgeInsets.fromLTRB(20, 32, 20, 48),
+        color: _kNavy,
         child: Column(children: [
           Container(
             width: 78, height: 78,
             decoration: BoxDecoration(
               color: _kOrange, borderRadius: BorderRadius.circular(22),
-              boxShadow: [BoxShadow(color: _kOrange.withOpacity(0.45), blurRadius: 22, offset: const Offset(0, 6))],
+              boxShadow: [BoxShadow(color: _kOrange.withOpacity(0.45),
+                  blurRadius: 22, offset: const Offset(0, 6))],
             ),
             child: Center(child: Text(_initials(widget.session.clientNom),
-                style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900))),
+                style: const TextStyle(color: Colors.white, fontSize: 26,
+                    fontWeight: FontWeight.w900))),
           ),
           const SizedBox(height: 14),
-          Text(widget.session.clientNom,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.4)),
+          Text(widget.session.clientNom, style: const TextStyle(fontSize: 20,
+              fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.4)),
           const SizedBox(height: 4),
-          Text(widget.session.clientEmail, style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.5))),
+          Text(widget.session.clientEmail,
+              style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.5))),
           const SizedBox(height: 24),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             _pStat('${_projects.length}', 'Projets'),
-            Container(width: 1, height: 30, color: Colors.white.withOpacity(0.12), margin: const EdgeInsets.symmetric(horizontal: 22)),
+            Container(width: 1, height: 30, color: Colors.white.withOpacity(0.12),
+                margin: const EdgeInsets.symmetric(horizontal: 22)),
             _pStat('${_documents.length}', 'Documents'),
-            Container(width: 1, height: 30, color: Colors.white.withOpacity(0.12), margin: const EdgeInsets.symmetric(horizontal: 22)),
+            Container(width: 1, height: 30, color: Colors.white.withOpacity(0.12),
+                margin: const EdgeInsets.symmetric(horizontal: 22)),
             _pStat('${_messages.length}', 'Messages'),
           ]),
         ]),
       ),
-      // Floating cards
+
+      // ✅ Sheet arrondie avec Transform.translate (pas de margin négative)
       Transform.translate(
         offset: const Offset(0, -24),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(
+            color: _kBg,
+            borderRadius: BorderRadius.vertical(top: _kSheetRadius),
+          ),
+          padding: const EdgeInsets.fromLTRB(18, 24, 18, 40),
           child: Column(children: [
             _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('INFORMATIONS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: _kMuted.withOpacity(0.6), letterSpacing: 1.0)),
+              Text('INFORMATIONS', style: TextStyle(fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: _kMuted.withOpacity(0.6), letterSpacing: 1.0)),
               const SizedBox(height: 16),
               _pRow(LucideIcons.user, 'Nom', widget.session.clientNom),
               const Divider(height: 20, color: _kBorder),
@@ -979,9 +1091,11 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
             const SizedBox(height: 12),
             _card(child: Column(children: [
               _pAction(LucideIcons.lock, 'Changer le mot de passe', _kOrange,
-                () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientChangePasswordScreen(session: widget.session)))),
+                  () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ClientChangePasswordScreen(session: widget.session)))),
               const Divider(height: 1, color: _kBorder, indent: 52),
-              _pAction(LucideIcons.logOut, 'Se déconnecter', const Color(0xFFEF4444), _logout),
+              _pAction(LucideIcons.logOut, 'Se déconnecter',
+                  const Color(0xFFEF4444), _logout),
             ])),
             const SizedBox(height: 8),
           ]),
@@ -991,36 +1105,44 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   );
 
   Widget _pStat(String v, String l) => Column(children: [
-    Text(v, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+    Text(v, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
+        color: Colors.white)),
     const SizedBox(height: 2),
-    Text(l, style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.45), fontWeight: FontWeight.w500)),
+    Text(l, style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.45),
+        fontWeight: FontWeight.w500)),
   ]);
 
   Widget _pRow(IconData icon, String label, String value) => Row(children: [
-    Container(width: 36, height: 36, decoration: BoxDecoration(color: _kBg, borderRadius: BorderRadius.circular(10)),
-      child: Icon(icon, size: 16, color: _kMuted)),
+    Container(width: 36, height: 36,
+        decoration: BoxDecoration(color: _kBg, borderRadius: BorderRadius.circular(10)),
+        child: Icon(icon, size: 16, color: _kMuted)),
     const SizedBox(width: 13),
     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(fontSize: 10, color: _kMuted, fontWeight: FontWeight.w600, letterSpacing: 0.2)),
+      Text(label, style: const TextStyle(fontSize: 10, color: _kMuted,
+          fontWeight: FontWeight.w600, letterSpacing: 0.2)),
       const SizedBox(height: 2),
-      Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _kText), maxLines: 1, overflow: TextOverflow.ellipsis),
+      Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+          color: _kText), maxLines: 1, overflow: TextOverflow.ellipsis),
     ])),
   ]);
 
   Widget _pAction(IconData icon, String label, Color color, VoidCallback onTap) =>
-    GestureDetector(
-      onTap: onTap, behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        child: Row(children: [
-          Container(width: 36, height: 36, decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, size: 17, color: color)),
-          const SizedBox(width: 13),
-          Expanded(child: Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color))),
-          Icon(LucideIcons.chevronRight, size: 15, color: color.withOpacity(0.35)),
-        ]),
-      ),
-    );
+      GestureDetector(
+        onTap: onTap, behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(children: [
+            Container(width: 36, height: 36,
+                decoration: BoxDecoration(color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, size: 17, color: color)),
+            const SizedBox(width: 13),
+            Expanded(child: Text(label, style: TextStyle(fontSize: 14,
+                fontWeight: FontWeight.w600, color: color))),
+            Icon(LucideIcons.chevronRight, size: 15, color: color.withOpacity(0.35)),
+          ]),
+        ),
+      );
 
   // ══════════════════════════════════════════════════════════════════════════
   // HELPERS
@@ -1030,9 +1152,9 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     width: double.infinity,
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
-      color: _kSurface,
-      borderRadius: BorderRadius.circular(18),
-      boxShadow: const [BoxShadow(color: Color(0x09000000), blurRadius: 14, offset: Offset(0, 4))],
+      color: _kSurface, borderRadius: BorderRadius.circular(18),
+      boxShadow: const [BoxShadow(color: Color(0x09000000),
+          blurRadius: 14, offset: Offset(0, 4))],
     ),
     child: child,
   );
@@ -1056,7 +1178,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         child: Icon(icon, size: 28, color: _kMuted.withOpacity(0.45)),
       ),
       const SizedBox(height: 16),
-      Text(msg, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _kMuted)),
+      Text(msg, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600,
+          color: _kMuted)),
     ]),
   ));
 
@@ -1072,7 +1195,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
 
   Future<void> _onTabSelected(int index) async {
     setState(() => _selectedIndex = index);
-    final now = DateTime.now();
+    final now   = DateTime.now();
     final prefs = await SharedPreferences.getInstance();
     if (index == 3) {
       await prefs.setString('last_msg_read_${widget.session.id}', now.toIso8601String());
@@ -1082,7 +1205,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         _messages = _messages.map((m) => ClientMessage(
           senderName: m.senderName, senderRole: m.senderRole, initials: m.initials,
           preview: m.preview, time: m.time, isUnread: false,
-          avatarColor: m.avatarColor, projetId: m.projetId, projetNom: m.projetNom, createdAtMs: m.createdAtMs,
+          avatarColor: m.avatarColor, projetId: m.projetId, projetNom: m.projetNom,
+          createdAtMs: m.createdAtMs,
         )).toList();
       });
     } else if (index == 2) {
@@ -1091,8 +1215,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       setState(() {
         _lastDocRead = now;
         _documents = _documents.map((d) => ClientDocument(
-          name: d.name, category: d.category, date: d.date, icon: d.icon,
-          isNew: false, uploadedAtMs: d.uploadedAtMs,
+          name: d.name, category: d.category, date: d.date,
+          icon: d.icon, isNew: false, uploadedAtMs: d.uploadedAtMs,
         )).toList();
       });
     }
@@ -1101,6 +1225,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   Future<void> _logout() async {
     try { await ClientAuthService.logout(); } catch (_) {}
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const ClientLoginScreen()));
+    Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const ClientLoginScreen()));
   }
 }

@@ -1,6 +1,7 @@
 // lib/service/client_portal_service.dart
 // Utilisé côté ARCHITECTE pour créer/gérer les accès clients
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'email_service.dart';
 
@@ -177,16 +178,48 @@ class ClientPortalService {
     return List<Map<String, dynamic>>.from(res as List);
   }
  
-  /// Ajouter un commentaire via RPC (bypasse le RLS)
+  /// Upload d'un fichier dans Supabase Storage (essaie plusieurs buckets)
+  static Future<String> uploadCommentFile({
+    required String projetId,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    final safeName = fileName.replaceAll(RegExp(r'[^\w.\-]'), '_');
+    final path = '$projetId/${DateTime.now().millisecondsSinceEpoch}_$safeName';
+
+    for (final bucket in ['commentaires', 'documents', 'public']) {
+      try {
+        await _supa.storage.from(bucket).uploadBinary(
+          path, bytes,
+          fileOptions: const FileOptions(upsert: true),
+        );
+        return _supa.storage.from(bucket).getPublicUrl(path);
+      } catch (_) {
+        continue;
+      }
+    }
+    throw Exception('Aucun bucket Storage disponible. Créez le bucket "commentaires" dans Supabase.');
+  }
+
+  /// Ajouter un commentaire (avec ou sans fichier joint)
+  /// Le fichier est encodé dans contenu via ||ATTACH||url||nom (même format que l'app architecte)
   static Future<void> addComment({
     required String projetId,
     required String contenu,
     String auteur = 'Client',
     String role   = 'client',
+    String? fichierUrl,
+    String? fichierNom,
   }) async {
+    String finalContenu = contenu;
+    if (fichierUrl != null && fichierUrl.isNotEmpty) {
+      final nom = (fichierNom?.isNotEmpty ?? false) ? fichierNom! : fichierUrl.split('/').last.split('?').first;
+      final attachTag = '||ATTACH||$fichierUrl||$nom';
+      finalContenu = contenu.isNotEmpty ? '$contenu\n$attachTag' : attachTag;
+    }
     await _supa.rpc('add_client_commentaire', params: {
       'p_projet_id': projetId,
-      'p_contenu':   contenu,
+      'p_contenu':   finalContenu,
       'p_auteur':    auteur,
       'p_role':      role,
     });

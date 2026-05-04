@@ -1,6 +1,9 @@
 // lib/screens/client_project_detail_screen.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../service/client_portal_service.dart';
 
 // ── Constantes (cohérentes avec client_portal_screen.dart) ───────────────────
@@ -33,7 +36,12 @@ class _Document {
 class _Commentaire {
   final String auteur, role, contenu, date, initials;
   final Color avatarColor;
-  const _Commentaire({required this.auteur, required this.role, required this.contenu, required this.date, required this.initials, required this.avatarColor});
+  final String? fichierUrl, fichierNom;
+  const _Commentaire({
+    required this.auteur, required this.role, required this.contenu,
+    required this.date, required this.initials, required this.avatarColor,
+    this.fichierUrl, this.fichierNom,
+  });
 }
 
 // ── Écran principal ───────────────────────────────────────────────────────────
@@ -74,6 +82,7 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
   // Commentaire input
   final _commentCtrl = TextEditingController();
   bool _sendingComment = false;
+  PlatformFile? _selectedFile;
 
   @override
   void initState() {
@@ -169,13 +178,40 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
       setState(() {
         _commentaires = data.map((d) {
           final auteur = (d['auteur'] as String?) ?? 'Inconnu';
+          final rawContenu = (d['contenu'] as String?) ?? '';
+          String contenu = rawContenu;
+          String? fichierUrl = d['fichier_url'] as String?;
+          String? fichierNom = d['fichier_nom'] as String?;
+
+          // Parsing du format ||ATTACH||... (présent n'importe où dans contenu)
+          const tag = '||ATTACH||';
+          final attachIdx = rawContenu.indexOf(tag);
+          if (attachIdx >= 0) {
+            contenu = rawContenu.substring(0, attachIdx).trim();
+            final payload = rawContenu.substring(attachIdx + tag.length);
+            final parts = payload.split('||');
+            final a = parts.isNotEmpty ? parts[0].trim() : '';
+            final b = parts.length >= 2 ? parts[1].trim() : '';
+            if (a.startsWith('http')) {
+              fichierUrl ??= a;
+              fichierNom ??= b.isNotEmpty ? b : a.split('/').last.split('?').first;
+            } else if (b.startsWith('http')) {
+              fichierNom ??= a.isNotEmpty ? a : b.split('/').last.split('?').first;
+              fichierUrl ??= b;
+            } else if (a.isNotEmpty) {
+              fichierNom ??= a;
+            }
+          }
+
           return _Commentaire(
             auteur:      auteur,
             role:        _roleLabel((d['role'] as String?) ?? 'client'),
-            contenu:     (d['contenu'] as String?) ?? '',
+            contenu:     contenu,
             date:        _relativeDate((d['created_at'] as String?) ?? ''),
             initials:    _initials(auteur),
             avatarColor: _avatarColor(auteur),
+            fichierUrl:  fichierUrl,
+            fichierNom:  fichierNom,
           );
         }).toList();
         _loadingCommentaires = false;
@@ -186,16 +222,45 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
     }
   }
 
+  Future<void> _pickFile() async {
+    final result = await FilePicker.pickFiles(withData: true, type: FileType.any);
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _selectedFile = result.files.first);
+    }
+  }
+
   Future<void> _sendComment() async {
     final text = _commentCtrl.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _selectedFile == null) return;
     setState(() => _sendingComment = true);
     try {
+      String? fichierUrl;
+      String? fichierNom;
+      if (_selectedFile != null) {
+        var bytes = _selectedFile!.bytes;
+        // Fallback : lire depuis le disque si bytes non chargé en mémoire
+        if (bytes == null && _selectedFile!.path != null) {
+          bytes = await File(_selectedFile!.path!).readAsBytes();
+        }
+        if (bytes != null) {
+          fichierUrl = await ClientPortalService.uploadCommentFile(
+            projetId: widget.projetId,
+            fileName: _selectedFile!.name,
+            bytes:    bytes,
+          );
+          fichierNom = _selectedFile!.name;
+        } else {
+          throw Exception('Impossible de lire le fichier sélectionné.');
+        }
+      }
       await ClientPortalService.addComment(
-        projetId: widget.projetId,
-        contenu:  text,
+        projetId:   widget.projetId,
+        contenu:    text.isEmpty ? '📎 Fichier joint' : text,
+        fichierUrl: fichierUrl,
+        fichierNom: fichierNom,
       );
       _commentCtrl.clear();
+      setState(() => _selectedFile = null);
       await _loadCommentaires();
     } catch (e) {
       if (!mounted) return;
@@ -717,8 +782,14 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
                   const SizedBox(width: 6),
                   Text(c.role, style: TextStyle(fontSize: 10, color: isClient ? _kAccentOrange : _kTextSecondary, fontWeight: FontWeight.w500)),
                 ]),
-                const SizedBox(height: 4),
-                Text(c.contenu, style: const TextStyle(fontSize: 13, color: _kDark, height: 1.5)),
+                if (c.contenu.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(c.contenu, style: const TextStyle(fontSize: 13, color: _kDark, height: 1.5)),
+                ],
+                if ((c.fichierUrl?.isNotEmpty ?? false) || (c.fichierNom?.isNotEmpty ?? false)) ...[
+                  SizedBox(height: c.contenu.isEmpty ? 4 : 8),
+                  _buildFileAttachment(c.fichierUrl ?? '', c.fichierNom ?? 'Fichier joint'),
+                ],
                 const SizedBox(height: 4),
                 Text(c.date, style: const TextStyle(fontSize: 10, color: _kTextSecondary), textAlign: TextAlign.right),
               ]),
@@ -730,6 +801,88 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
     );
   }
 
+  // ── Helpers type de fichier ───────────────────────────────────────────────
+  static const _imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+
+  String _fileExt(String nameOrUrl) =>
+      nameOrUrl.split('/').last.split('?').first.split('.').last.toLowerCase();
+
+  Color _extColor(String ext) {
+    if (_imageExts.contains(ext)) return _kGreen;
+    if (ext == 'pdf') return _kRed;
+    if (['xlsx', 'xls'].contains(ext)) return _kGreen;
+    if (['docx', 'doc'].contains(ext)) return _kBlue;
+    if (['dwg', 'dxf'].contains(ext)) return const Color(0xFF8B5CF6);
+    return _kAccentOrange;
+  }
+
+  IconData _extIcon(String ext) {
+    if (_imageExts.contains(ext)) return LucideIcons.image;
+    if (ext == 'pdf') return LucideIcons.fileText;
+    if (['xlsx', 'xls'].contains(ext)) return LucideIcons.table;
+    if (['docx', 'doc'].contains(ext)) return LucideIcons.fileText;
+    if (['dwg', 'dxf'].contains(ext)) return LucideIcons.penTool;
+    return LucideIcons.file;
+  }
+
+  String _extLabel(String ext) {
+    if (_imageExts.contains(ext)) return 'Image';
+    if (ext == 'pdf') return 'PDF';
+    if (['xlsx', 'xls'].contains(ext)) return 'Excel';
+    if (['docx', 'doc'].contains(ext)) return 'Word';
+    if (['dwg', 'dxf'].contains(ext)) return 'Plan';
+    return ext.isEmpty ? 'Fichier' : ext.toUpperCase();
+  }
+
+Widget _buildFileAttachment(String url, String nom) {
+  final hasUrl  = url.isNotEmpty;
+  final source  = nom.isNotEmpty ? nom : url;
+  final ext     = _fileExt(source);
+  final isImage = _imageExts.contains(ext) && hasUrl;
+  final color   = _extColor(ext);
+  final icon    = _extIcon(ext);
+  final display = nom.isNotEmpty ? nom : 'Fichier joint';
+
+  Future<void> openUrl() async {
+    if (!hasUrl) return;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  // ✅ NOUVEAU — toujours afficher en pill, même pour les images
+  return GestureDetector(
+    onTap: hasUrl ? openUrl : null,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        // ✅ Fond orange uni comme dans le screenshot
+        color: _kAccentOrange,
+        borderRadius: BorderRadius.circular(30), // ✅ pill arrondie
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        // Icône type fichier
+        Icon(icon, size: 16, color: Colors.white),
+        const SizedBox(width: 8),
+        // Nom fichier
+        Flexible(
+          child: Text(
+            display,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Icône download
+        const Icon(LucideIcons.download, size: 14, color: Colors.white),
+      ]),
+    ),
+  );
+}
   Widget _buildCommentInput() {
     return Container(
       padding: EdgeInsets.only(
@@ -740,39 +893,75 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
         color: _kSurface,
         boxShadow: [BoxShadow(color: Color(0x10000000), blurRadius: 10, offset: Offset(0, -3))],
       ),
-      child: Row(children: [
-        Expanded(
-          child: TextField(
-            controller: _commentCtrl,
-            maxLines: 3,
-            minLines: 1,
-            style: const TextStyle(fontSize: 13, color: _kDark),
-            decoration: InputDecoration(
-              hintText: 'Écrire un commentaire...',
-              hintStyle: const TextStyle(color: _kTextSecondary, fontSize: 13),
-              filled: true,
-              fillColor: const Color(0xFFF9FAFB),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        GestureDetector(
-          onTap: _sendingComment ? null : _sendComment,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            width: 42, height: 42,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Aperçu fichier sélectionné
+        if (_selectedFile != null)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: _sendingComment ? _kTextSecondary : _kAccentOrange,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: _sendingComment ? [] : [BoxShadow(color: _kAccentOrange.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 3))],
+              color: _kAccentOrange.withOpacity(0.07),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _kAccentOrange.withOpacity(0.25)),
             ),
-            child: _sendingComment
-              ? const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-              : const Icon(LucideIcons.send, color: Colors.white, size: 16),
+            child: Row(children: [
+              const Icon(LucideIcons.paperclip, size: 14, color: _kAccentOrange),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_selectedFile!.name, style: const TextStyle(fontSize: 12, color: _kDark), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              GestureDetector(
+                onTap: () => setState(() => _selectedFile = null),
+                child: const Icon(LucideIcons.x, size: 14, color: _kTextSecondary),
+              ),
+            ]),
           ),
-        ),
+        // Zone de saisie + boutons
+        Row(children: [
+          // Bouton joindre fichier
+          GestureDetector(
+            onTap: _sendingComment ? null : _pickFile,
+            child: Container(
+              width: 42, height: 42,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                color: _selectedFile != null ? _kAccentOrange.withOpacity(0.12) : const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(LucideIcons.paperclip, size: 16, color: _selectedFile != null ? _kAccentOrange : _kTextSecondary),
+            ),
+          ),
+          Expanded(
+            child: TextField(
+              controller: _commentCtrl,
+              maxLines: 3,
+              minLines: 1,
+              style: const TextStyle(fontSize: 13, color: _kDark),
+              decoration: InputDecoration(
+                hintText: 'Écrire un commentaire...',
+                hintStyle: const TextStyle(color: _kTextSecondary, fontSize: 13),
+                filled: true,
+                fillColor: const Color(0xFFF9FAFB),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: _sendingComment ? null : _sendComment,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 42, height: 42,
+              decoration: BoxDecoration(
+                color: _sendingComment ? _kTextSecondary : _kAccentOrange,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: _sendingComment ? [] : [BoxShadow(color: _kAccentOrange.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 3))],
+              ),
+              child: _sendingComment
+                ? const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
+                : const Icon(LucideIcons.send, color: Colors.white, size: 16),
+            ),
+          ),
+        ]),
       ]),
     );
   }

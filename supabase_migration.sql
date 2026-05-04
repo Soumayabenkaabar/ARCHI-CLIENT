@@ -54,6 +54,8 @@ CREATE TABLE public.commentaires (
   contenu text NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
   client_portal_id uuid,
+  fichier_url text,
+  fichier_nom text,
   CONSTRAINT commentaires_pkey PRIMARY KEY (id),
   CONSTRAINT commentaires_projet_id_fkey FOREIGN KEY (projet_id) REFERENCES public.projets(id),
   CONSTRAINT commentaires_client_portal_id_fkey FOREIGN KEY (client_portal_id) REFERENCES public.client_portal_access(id)

@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(flutter analyze *)",
-      "Bash(flutter pub *)"
+      "Bash(flutter pub *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\0000\\\\archi_client\\\\archi_client\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(dir *)",
+      "Bash(flutter build *)"
     ]
   }
 }

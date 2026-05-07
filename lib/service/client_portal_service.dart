@@ -177,6 +177,32 @@ class ClientPortalService {
         .limit(20);
     return List<Map<String, dynamic>>.from(res as List);
   }
+
+  /// Documents d'un projet spécifique
+  static Future<List<Map<String, dynamic>>> getDocumentsForProjet(String projetId) async {
+    // RPC SECURITY DEFINER — contourne le RLS pour les clients anonymes
+    try {
+      final rows = await _supa.rpc(
+        'get_project_documents',
+        params: {'p_projet_id': projetId},
+      );
+      final result = (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      if (result.isNotEmpty) return result;
+    } catch (_) {}
+
+    // Fallback direct (fonctionne si la table a une politique de lecture anon)
+    try {
+      final res = await _supa
+          .from('documents')
+          .select()
+          .eq('projet_id', projetId)
+          .order('uploaded_at', ascending: false)
+          .limit(50);
+      return List<Map<String, dynamic>>.from(res as List);
+    } catch (_) {
+      return [];
+    }
+  }
  
   /// Upload d'un fichier dans Supabase Storage (essaie plusieurs buckets)
   static Future<String> uploadCommentFile({
@@ -257,31 +283,66 @@ class ClientPortalService {
     return Map<String, dynamic>.from(rows.first as Map);
   }
 
-  // ── Documents de tous les projets du client (par email, contourne le RLS) ─
+  // ── Documents de tous les projets du client (par email) ─────────────────
   static Future<List<Map<String, dynamic>>> getRecentDocuments(String clientEmail) async {
+    // 1. RPC get_client_documents (SECURITY DEFINER)
     try {
       final rows = await _supa.rpc(
         'get_client_documents',
         params: {'p_client_email': clientEmail.trim().toLowerCase()},
       );
-      return (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
-    } catch (e) {
-      // ignore: avoid_print
-      print('[ClientPortalService] getRecentDocuments error: $e');
-      rethrow;
+      final result = (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      if (result.isNotEmpty) return result;
+    } catch (_) {}
+
+    // 2. Résout les projets du client
+    final projets = await getProjetsForClient(clientEmail);
+    if (projets.isEmpty) return [];
+    final ids = projets
+        .map((p) => p['id'] as String?)
+        .where((id) => id != null && id.isNotEmpty)
+        .cast<String>()
+        .toList();
+    if (ids.isEmpty) return [];
+
+    // 3. Requête directe (fonctionne si la table a une politique anon)
+    try {
+      final rows = await _supa
+          .from('documents')
+          .select()
+          .inFilter('projet_id', ids)
+          .order('uploaded_at', ascending: false)
+          .limit(50);
+      final result = List<Map<String, dynamic>>.from(rows as List);
+      if (result.isNotEmpty) return result;
+    } catch (_) {}
+
+    // 4. Fallback : get_project_documents RPC (SECURITY DEFINER) par projet
+    final allDocs = <Map<String, dynamic>>[];
+    for (final id in ids.take(10)) {
+      final docs = await getDocumentsForProjet(id);
+      allDocs.addAll(docs);
     }
+    allDocs.sort((a, b) =>
+        ((b['uploaded_at'] as String?) ?? '')
+            .compareTo((a['uploaded_at'] as String?) ?? ''));
+    return allDocs.take(50).toList();
   }
 
   // ── Commentaires d'un projet via RPC (bypasse le RLS) ───────────────────
   static Future<List<Map<String, dynamic>>> getRecentMessages(String projetId, {int limit = 50}) async {
+    // 1. RPC SECURITY DEFINER
     try {
       final rows = await _supa.rpc('get_project_commentaires', params: {
         'p_projet_id': projetId,
         'p_limit':     limit,
       });
-      return (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
-    } catch (_) {
-      // Fallback direct
+      final result = (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      if (result.isNotEmpty) return result;
+    } catch (_) {}
+
+    // 2. Fallback direct (fonctionne si la table a une politique anon)
+    try {
       final rows = await _supa
           .from('commentaires')
           .select()
@@ -289,25 +350,37 @@ class ClientPortalService {
           .order('created_at', ascending: true)
           .limit(limit);
       return (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+    } catch (_) {
+      return [];
     }
   }
 
   // ── Liste tous les projets accessibles par un client ─────────────────────
-  // Utilise la fonction RPC get_client_projets (SECURITY DEFINER) pour contourner le RLS
   static Future<List<Map<String, dynamic>>> getProjetsForClient(String clientEmail) async {
     final trimEmail = clientEmail.trim().toLowerCase();
-    try {
-      final rows = await _supa.rpc(
-        'get_client_projets',
-        params: {'p_email': trimEmail},
-      );
-      return (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
-    } catch (_) {
-      return _getProjetsDirectFallback(trimEmail);
+
+    // RPC et fallback en parallèle — fusionne les résultats par ID.
+    // Nécessaire car la RPC peut manquer des projets liés seulement par texte,
+    // et le fallback peut manquer des projets si la RPC échoue.
+    final results = await Future.wait([
+      _supa
+          .rpc('get_client_projets', params: {'p_email': trimEmail})
+          .then((r) => (r as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList())
+          .catchError((_) => <Map<String, dynamic>>[]),
+      _getProjetsDirectFallback(trimEmail),
+    ]);
+
+    final seenIds = <String>{};
+    final merged  = <Map<String, dynamic>>[];
+    for (final proj in [...results[0], ...results[1]]) {
+      final id = proj['id'] as String?;
+      if (id != null && seenIds.add(id)) merged.add(proj);
     }
+    return merged;
   }
 
-  // Fallback direct si la fonction RPC n'est pas encore créée
   static Future<List<Map<String, dynamic>>> _getProjetsDirectFallback(String trimEmail) async {
     try {
       final accesses = await _supa
@@ -319,21 +392,21 @@ class ClientPortalService {
       final accessList = accesses as List;
       final linkedIds  = <String>{};
 
+      // Niveau 1 : projet_id direct (FK)
       for (final access in accessList) {
         final pid = access['projet_id'] as String?;
-        if (pid != null) { linkedIds.add(pid); continue; }
-
-        final nom      = (access['client_nom'] as String?) ?? '';
-        final accessId = access['id'] as String;
-        String? found;
-        try { found = await _findProjetId(email: trimEmail, nom: nom); } catch (_) {}
-        if (found != null) {
-          linkedIds.add(found);
-          _supa.from('client_portal_access')
-              .update({'projet_id': found}).eq('id', accessId)
-              .then((_) {}).catchError((_) {});
-        }
+        if (pid != null) linkedIds.add(pid);
       }
+
+      // Niveau 2 : clients.email → projets.client_id
+      linkedIds.addAll(await _findAllProjetsByClientTable(trimEmail));
+
+      // Niveau 3 : champ texte projets.client
+      final nom = accessList.isNotEmpty
+          ? (accessList.first['client_nom'] as String?) ?? ''
+          : '';
+      final textIds = await _findAllProjetsByText(email: trimEmail, nom: nom);
+      linkedIds.addAll(textIds);
 
       if (linkedIds.isEmpty) return [];
 
@@ -348,14 +421,51 @@ class ClientPortalService {
     }
   }
 
-  static Future<String?> _findProjetId({required String email, required String nom}) async {
-    final byEmail = await _supa.from('projets').select('id').ilike('client', '%$email%').limit(1);
-    if ((byEmail as List).isNotEmpty) return byEmail.first['id'] as String;
-    if (nom.isEmpty) return null;
-    final byClient = await _supa.from('projets').select('id').ilike('client', '%$nom%').limit(1);
-    if ((byClient as List).isNotEmpty) return byClient.first['id'] as String;
-    final byTitre = await _supa.from('projets').select('id').ilike('titre', '%$nom%').limit(1);
-    if ((byTitre as List).isNotEmpty) return byTitre.first['id'] as String;
-    return null;
+  /// Persiste via RPC (SECURITY DEFINER) les projets trouvés par texte comme
+  /// liens FK explicites. À appeler AVANT un changement de nom.
+  /// Requiert la fonction SQL `consolidate_client_project_links` dans Supabase.
+  static Future<void> consolidateProjectLinks({
+    required String clientEmail,
+    required String clientNom,
+  }) async {
+    try {
+      await _supa.rpc('consolidate_client_project_links', params: {
+        'p_email': clientEmail,
+        'p_nom':   clientNom,
+      });
+    } catch (_) {}
+  }
+
+  // clients.email → clients.id → projets.client_id
+  static Future<Set<String>> _findAllProjetsByClientTable(String email) async {
+    try {
+      final clientRows = await _supa
+          .from('clients').select('id').eq('email', email);
+      if ((clientRows as List).isEmpty) return {};
+      final clientIds = (clientRows as List).map((r) => r['id'] as String).toList();
+      final projetRows = await _supa
+          .from('projets').select('id').inFilter('client_id', clientIds);
+      return (projetRows as List).map((r) => r['id'] as String).toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  // Champ texte projets.client — retourne tous les projets correspondants
+  static Future<Set<String>> _findAllProjetsByText({required String email, required String nom}) async {
+    final ids = <String>{};
+    try {
+      if (email.isNotEmpty) {
+        final r = await _supa.from('projets').select('id')
+            .ilike('client', '%$email%').eq('portail_client', true);
+        ids.addAll((r as List).map((e) => e['id'] as String));
+      }
+      if (nom.isNotEmpty) {
+        final r = await _supa.from('projets').select('id')
+            .ilike('client', '%$nom%').eq('portail_client', true);
+        ids.addAll((r as List).map((e) => e['id'] as String));
+      }
+    } catch (_) {}
+    return ids;
   }
 }

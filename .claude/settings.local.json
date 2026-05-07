@@ -6,7 +6,15 @@
       "Bash(Get-ChildItem -Path \"D:\\\\0000\\\\archi_client\\\\archi_client\" -Directory)",
       "Bash(Select-Object Name)",
       "Bash(dir *)",
-      "Bash(flutter build *)"
+      "Bash(flutter build *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\achra\\\\.claude\\\\projects\\\\D--0000-archi-client-archi-client\\\\cfea2d6c-fffb-47cb-919a-c6e309819157.jsonl\")",
+      "Bash(Select-Object -Last 200)",
+      "PowerShell(git *)",
+      "PowerShell(New-Item *)",
+      "PowerShell(flutter analyze *)",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\achra\\\\analyze2.txt\" | Where-Object { $_ -match \"error -\" })",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\achra\\\\analyze3.txt\" | Where-Object { $_ -notmatch \"withOpacity\" -and $_ -notmatch \"^$\" -and $_ -notmatch \"Analyzing\" -and $_ -notmatch \"info -\" -and $_ -notmatch \"warning -\" } | Select-Object -Last 15)",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\achra\\\\analyze4.txt\" | Where-Object { $_ -notmatch \"withOpacity\" -and $_ -notmatch \"unnecessary_import\" -and $_ -notmatch \"deprecated\" -and $_ -notmatch \"asset_directory\" -and $_ -notmatch \"^$\" -and $_ -notmatch \"Analyzing\" -and $_ -notmatch \"info -\" -and $_ -notmatch \"warning -\" } | Select-Object -Last 10)"
     ]
   }
 }

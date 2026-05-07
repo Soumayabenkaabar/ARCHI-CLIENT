@@ -33,6 +33,7 @@ CREATE TABLE public.client_portal_access (
   created_at timestamp with time zone DEFAULT now(),
   last_login timestamp with time zone,
   password_changed boolean DEFAULT false,
+  telephone text,
   CONSTRAINT client_portal_access_pkey PRIMARY KEY (id),
   CONSTRAINT client_portal_access_projet_id_fkey FOREIGN KEY (projet_id) REFERENCES public.projets(id)
 );

@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../service/client_portal_service.dart';
 
 // ── Constantes (cohérentes avec client_portal_screen.dart) ───────────────────
 const _kBg            = Color(0xFFF5F5F5);
 const _kSurface       = Colors.white;
+const _kNavy          = Color(0xFF0B1437);
 const _kDark          = Color(0xFF0A0E1A);
 const _kAccentOrange  = Color(0xFFFF8C00);
 const _kTextSecondary = Color(0xFF6B7280);
@@ -28,9 +30,9 @@ class _Photo {
 }
 
 class _Document {
-  final String id, nom, type, date;
+  final String id, nom, type, date, url;
   final IconData icon;
-  const _Document({required this.id, required this.nom, required this.type, required this.date, required this.icon});
+  const _Document({required this.id, required this.nom, required this.type, required this.date, required this.url, required this.icon});
 }
 
 class _Commentaire {
@@ -149,7 +151,7 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
 
   Future<void> _loadDocuments() async {
     try {
-      final data = await ClientPortalService.getRecentDocuments(widget.clientEmail);
+      final data = await ClientPortalService.getDocumentsForProjet(widget.projetId);
       if (!mounted) return;
       setState(() {
         _documents = data.map((d) {
@@ -160,6 +162,7 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
             nom:  _cleanDocName(rawNom),
             type: _docTypeLabel(type),
             date: _formatDate((d['uploaded_at'] as String?) ?? ''),
+            url:  (d['url'] as String?) ?? '',
             icon: _docIcon(type),
           );
         }).toList();
@@ -384,7 +387,7 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
   Widget _buildHeader() {
     return Container(
       decoration: const BoxDecoration(
-        color: _kDark,
+        color: _kNavy,
         boxShadow: [BoxShadow(color: Color(0x20000000), blurRadius: 8, offset: Offset(0, 2))],
       ),
       padding: EdgeInsets.only(
@@ -580,7 +583,10 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
         childAspectRatio: 1.1,
       ),
       itemCount: _photos.length,
-      itemBuilder: (_, i) => _buildPhotoCard(_photos[i]),
+      itemBuilder: (_, i) => GestureDetector(
+        onTap: () => _openPhotoViewer(i),
+        child: _buildPhotoCard(_photos[i]),
+      ),
     );
   }
 
@@ -636,6 +642,13 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
     );
   }
 
+  void _openPhotoViewer(int initialIndex) {
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => _PhotoViewerPage(photos: _photos, initialIndex: initialIndex),
+    ));
+  }
+
   // ── TAB 2 : Documents ─────────────────────────────────────────────────────
   Widget _buildDocumentsTab() {
     return SingleChildScrollView(
@@ -656,50 +669,60 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
 
   Widget _buildDocumentRow(_Document doc) {
     final typeColor = _docTypeColor(doc.type);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _kSurface,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      child: Row(children: [
-        Container(
-          width: 42, height: 42,
-          decoration: BoxDecoration(
-            color: typeColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(doc.icon, size: 18, color: typeColor),
+    return GestureDetector(
+      onTap: () => _openDocumentPreview(doc),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _kSurface,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
         ),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(doc.nom, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _kDark), maxLines: 2, overflow: TextOverflow.ellipsis),
-          const SizedBox(height: 4),
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: typeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-              child: Text(doc.type, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: typeColor)),
+        child: Row(children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(
+              color: typeColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const SizedBox(width: 8),
-            if (doc.date.isNotEmpty)
-              Text(doc.date, style: const TextStyle(fontSize: 11, color: _kTextSecondary)),
-          ]),
-        ])),
-        const SizedBox(width: 8),
-        // Bouton télécharger
-        Container(
-          width: 34, height: 34,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF3F4F6),
-            borderRadius: BorderRadius.circular(8),
+            child: Icon(doc.icon, size: 18, color: typeColor),
           ),
-          child: const Icon(LucideIcons.download, size: 15, color: _kTextSecondary),
-        ),
-      ]),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(doc.nom, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _kDark), maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: typeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                child: Text(doc.type, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: typeColor)),
+              ),
+              const SizedBox(width: 8),
+              if (doc.date.isNotEmpty)
+                Text(doc.date, style: const TextStyle(fontSize: 11, color: _kTextSecondary)),
+            ]),
+          ])),
+          const SizedBox(width: 8),
+          Container(
+            width: 34, height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(LucideIcons.eye, size: 15, color: _kTextSecondary),
+          ),
+        ]),
+      ),
     );
+  }
+
+  void _openDocumentPreview(_Document doc) {
+    if (doc.url.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => _DocumentViewerPage(doc: doc),
+    ));
   }
 
   Color _docTypeColor(String type) {
@@ -838,8 +861,6 @@ Widget _buildFileAttachment(String url, String nom) {
   final hasUrl  = url.isNotEmpty;
   final source  = nom.isNotEmpty ? nom : url;
   final ext     = _fileExt(source);
-  final isImage = _imageExts.contains(ext) && hasUrl;
-  final color   = _extColor(ext);
   final icon    = _extIcon(ext);
   final display = nom.isNotEmpty ? nom : 'Fichier joint';
 
@@ -1101,6 +1122,381 @@ Widget _buildFileAttachment(String url, String nom) {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Center(child: Text(msg, style: const TextStyle(fontSize: 13, color: _kTextSecondary))),
+    );
+  }
+}
+
+// ── Visionneuse document plein écran ─────────────────────────────────────────
+class _DocumentViewerPage extends StatefulWidget {
+  final _Document doc;
+  const _DocumentViewerPage({super.key, required this.doc});
+
+  @override
+  State<_DocumentViewerPage> createState() => _DocumentViewerPageState();
+}
+
+class _DocumentViewerPageState extends State<_DocumentViewerPage> {
+  late final WebViewController? _webCtrl;
+  bool _webLoading = true;
+  bool _webError   = false;
+
+  bool get _isImage =>
+      ['Image', 'IMAGE'].contains(widget.doc.type) ||
+      ['jpg','jpeg','png','gif','webp','bmp'].contains(
+          widget.doc.url.split('?').first.split('.').last.toLowerCase());
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_isImage && widget.doc.url.isNotEmpty) {
+      _webCtrl = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(NavigationDelegate(
+          onPageStarted: (_) => setState(() { _webLoading = true;  _webError = false; }),
+          onPageFinished: (_) => setState(() => _webLoading = false),
+          onWebResourceError: (_) => setState(() { _webLoading = false; _webError = true; }),
+        ))
+        ..loadRequest(Uri.parse(widget.doc.url));
+    } else {
+      _webCtrl = null;
+    }
+  }
+
+  Color _typeColor() {
+    switch (widget.doc.type.toUpperCase()) {
+      case 'PDF':   return _kRed;
+      case 'IMAGE': return _kGreen;
+      case 'PLAN':  return _kBlue;
+      case 'WORD':  return const Color(0xFF2563EB);
+      case 'EXCEL': return _kGreen;
+      default:      return _kAccentOrange;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tc = _typeColor();
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Column(children: [
+
+        // ── Barre haute ───────────────────────────────────────────────────
+        Container(
+          color: _kNavy,
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 16, right: 16, bottom: 12,
+          ),
+          child: Row(children: [
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(LucideIcons.x, color: Colors.white, size: 18),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(widget.doc.nom,
+                  style: const TextStyle(color: Colors.white, fontSize: 13,
+                      fontWeight: FontWeight.w700),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 2),
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: tc.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(widget.doc.type,
+                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: tc)),
+                ),
+                if (widget.doc.date.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Text(widget.doc.date,
+                      style: TextStyle(fontSize: 10,
+                          color: Colors.white.withOpacity(0.45))),
+                ],
+              ]),
+            ])),
+            const SizedBox(width: 8),
+            // Bouton ouvrir externalement
+            GestureDetector(
+              onTap: () async {
+                final uri = Uri.parse(widget.doc.url);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+              child: Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  color: _kAccentOrange.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _kAccentOrange.withOpacity(0.3)),
+                ),
+                child: const Icon(LucideIcons.externalLink,
+                    color: _kAccentOrange, size: 16),
+              ),
+            ),
+          ]),
+        ),
+
+        // ── Contenu ───────────────────────────────────────────────────────
+        Expanded(child: _buildContent(tc)),
+      ]),
+    );
+  }
+
+  Widget _buildContent(Color tc) {
+    if (_isImage) {
+      return InteractiveViewer(
+        minScale: 0.5,
+        maxScale: 4.0,
+        child: Center(
+          child: Image.network(
+            widget.doc.url,
+            fit: BoxFit.contain,
+            loadingBuilder: (_, child, progress) => progress == null
+                ? child
+                : const Center(child: CircularProgressIndicator(
+                    color: _kAccentOrange, strokeWidth: 2)),
+            errorBuilder: (_, __, ___) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(widget.doc.icon, size: 56, color: tc.withOpacity(0.4)),
+                const SizedBox(height: 12),
+                const Text('Impossible de charger l\'image',
+                    style: TextStyle(color: Colors.white54, fontSize: 13)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_webError) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(widget.doc.icon, size: 56, color: tc.withOpacity(0.4)),
+        const SizedBox(height: 16),
+        const Text('Impossible de charger le document',
+            style: TextStyle(color: Colors.white54, fontSize: 13)),
+        const SizedBox(height: 20),
+        GestureDetector(
+          onTap: () async {
+            final uri = Uri.parse(widget.doc.url);
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: _kAccentOrange,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(LucideIcons.externalLink, color: Colors.white, size: 15),
+              SizedBox(width: 8),
+              Text('Ouvrir dans le navigateur',
+                  style: TextStyle(color: Colors.white,
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+        ),
+      ]));
+    }
+
+    return Stack(children: [
+      if (_webCtrl != null)
+        WebViewWidget(controller: _webCtrl!),
+      if (_webLoading)
+        const Center(child: CircularProgressIndicator(
+            color: _kAccentOrange, strokeWidth: 2)),
+    ]);
+  }
+}
+
+// ── Visionneuse photo plein écran ─────────────────────────────────────────────
+class _PhotoViewerPage extends StatefulWidget {
+  final List<_Photo> photos;
+  final int initialIndex;
+  const _PhotoViewerPage({super.key, required this.photos, required this.initialIndex});
+
+  @override
+  State<_PhotoViewerPage> createState() => _PhotoViewerPageState();
+}
+
+class _PhotoViewerPageState extends State<_PhotoViewerPage> {
+  late PageController _pageCtrl;
+  late int _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current  = widget.initialIndex;
+    _pageCtrl = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = widget.photos[_current];
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(children: [
+
+        // ── Photos (swipe) ────────────────────────────────────────────────
+        PageView.builder(
+          controller: _pageCtrl,
+          itemCount: widget.photos.length,
+          onPageChanged: (i) => setState(() => _current = i),
+          itemBuilder: (_, i) {
+            final p = widget.photos[i];
+            return InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Center(
+                child: p.url.isNotEmpty
+                  ? Image.network(
+                      p.url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Icon(LucideIcons.image, size: 48, color: Colors.white38),
+                    )
+                  : const Icon(LucideIcons.image, size: 48, color: Colors.white38),
+              ),
+            );
+          },
+        ),
+
+        // ── Barre haute ───────────────────────────────────────────────────
+        Positioned(
+          top: 0, left: 0, right: 0,
+          child: Container(
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 16, right: 16, bottom: 14,
+            ),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xCC000000), Colors.transparent],
+              ),
+            ),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(LucideIcons.x, color: Colors.white, size: 18),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_current + 1} / ${widget.photos.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ]),
+          ),
+        ),
+
+        // ── Info bas ──────────────────────────────────────────────────────
+        Positioned(
+          bottom: 0, left: 0, right: 0,
+          child: Container(
+            padding: EdgeInsets.only(
+              left: 20, right: 20, top: 24,
+              bottom: MediaQuery.of(context).padding.bottom + 20,
+            ),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [Color(0xCC000000), Colors.transparent],
+              ),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              if (photo.nom.isNotEmpty)
+                Text(photo.nom, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (photo.description.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(photo.description, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+              ],
+              if (photo.date.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(photo.date, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)),
+              ],
+            ]),
+          ),
+        ),
+
+        // ── Flèche précédente ─────────────────────────────────────────────
+        if (_current > 0)
+          Positioned(
+            left: 12, top: 0, bottom: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: () => _pageCtrl.previousPage(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                ),
+                child: Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(LucideIcons.chevronLeft, color: Colors.white, size: 20),
+                ),
+              ),
+            ),
+          ),
+
+        // ── Flèche suivante ───────────────────────────────────────────────
+        if (_current < widget.photos.length - 1)
+          Positioned(
+            right: 12, top: 0, bottom: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: () => _pageCtrl.nextPage(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                ),
+                child: Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(LucideIcons.chevronRight, color: Colors.white, size: 20),
+                ),
+              ),
+            ),
+          ),
+
+      ]),
     );
   }
 }

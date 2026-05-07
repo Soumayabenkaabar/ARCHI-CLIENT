@@ -3,9 +3,9 @@ import 'package:archi_client/screens/client_project_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../service/client_auth_service.dart';
 import '../service/client_portal_service.dart';
-import 'client_change_password_screen.dart';
 import 'client_login_screen.dart';
 
 // ── Modèles ───────────────────────────────────────────────────────────────────
@@ -79,6 +79,7 @@ class ClientPortalScreen extends StatefulWidget {
 }
 
 class _ClientPortalScreenState extends State<ClientPortalScreen> {
+  late ClientSession _session;
   int _selectedIndex = 0;
   List<ClientProject>  _projects  = [];
   List<ClientDocument> _documents = [];
@@ -104,6 +105,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   @override
   void initState() {
     super.initState();
+    _session = widget.session;
     _loadPortalData();
   }
 
@@ -115,13 +117,13 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     _lastDocRead = docTs != null ? DateTime.tryParse(docTs) ?? _lastDocRead : _lastDocRead;
 
     final projetsData = await ClientPortalService
-        .getProjetsForClient(widget.session.clientEmail)
+        .getProjetsForClient(_session.clientEmail)
         .catchError((_) => <Map<String, dynamic>>[]);
 
     List<Map<String, dynamic>> docsData = [];
     String? docsErr;
     try {
-      docsData = await ClientPortalService.getRecentDocuments(widget.session.clientEmail);
+      docsData = await ClientPortalService.getRecentDocuments(_session.clientEmail);
     } catch (e) { docsErr = e.toString(); }
 
     final msgsData = <Map<String, dynamic>>[];
@@ -256,7 +258,6 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_loading && _projects.isEmpty) return _buildNoProjectScreen();
     final isWide = MediaQuery.of(context).size.width > 860;
     return Scaffold(
       backgroundColor: _kNavy,
@@ -372,13 +373,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                     color: sel ? _kOrange : Colors.white.withOpacity(0.5))),
               ]),
             ),
-            if (badge > 0) Positioned(top: -4, right: -2,
-              child: Container(
-                width: 16, height: 16,
-                decoration: const BoxDecoration(color: Color(0xFFEF4444), shape: BoxShape.circle),
-                child: Center(child: Text('$badge', style: const TextStyle(
-                    color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800))),
-              )),
+            if (badge > 0) Positioned(top: -5, right: -5,
+              child: _NavBadge(count: badge)),
           ]),
         );
       }))),
@@ -440,8 +436,9 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
           child: GestureDetector(
             onTap: () => _onTabSelected(i),
             behavior: HitTestBehavior.opaque,
-            child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
-              Column(mainAxisSize: MainAxisSize.min, children: [
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // Icône + badge dans un Stack local
+              Stack(clipBehavior: Clip.none, children: [
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeInOut,
@@ -453,30 +450,22 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                   child: Icon(_navIcons[i], size: 20,
                       color: sel ? _kOrange : Colors.white.withOpacity(0.30)),
                 ),
-                const SizedBox(height: 4),
-                AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 200),
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
-                    color: sel ? _kOrange : Colors.white.withOpacity(0.30),
+                if (badge > 0)
+                  Positioned(
+                    top: -5, right: -5,
+                    child: _NavBadge(count: badge),
                   ),
-                  child: Text(_navLabels[i]),
-                ),
               ]),
-              if (badge > 0)
-                Positioned(
-                  top: 0,
-                  right: _badgeOffset(context),
-                  child: Container(
-                    width: 16, height: 16,
-                    decoration: const BoxDecoration(
-                        color: Color(0xFFEF4444), shape: BoxShape.circle),
-                    child: Center(child: Text(badge > 9 ? '9+' : '$badge',
-                        style: const TextStyle(color: Colors.white,
-                            fontSize: 8, fontWeight: FontWeight.w800, height: 1.0))),
-                  ),
+              const SizedBox(height: 4),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 200),
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                  color: sel ? _kOrange : Colors.white.withOpacity(0.30),
                 ),
+                child: Text(_navLabels[i]),
+              ),
             ]),
           ),
         );
@@ -484,16 +473,13 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     ),
   );
 
-  double _badgeOffset(BuildContext context) {
-    final itemW = MediaQuery.of(context).size.width / _navIcons.length;
-    return (itemW - 44) / 2 - 2;
-  }
-
   // ══════════════════════════════════════════════════════════════════════════
   // DASHBOARD
   // ══════════════════════════════════════════════════════════════════════════
 
-  Widget _buildDashboard({required bool isWide}) => SingleChildScrollView(
+  Widget _buildDashboard({required bool isWide}) {
+    if (!_loading && _projects.isEmpty) return _buildNoProjectScreen();
+    return SingleChildScrollView(
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildHero(),
       // ✅ Transform.translate au lieu de margin négative
@@ -530,7 +516,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         ),
       ),
     ]),
-  );
+    );
+  }
 
   // ── Hero ──────────────────────────────────────────────────────────────────
   Widget _buildHero() => Container(
@@ -565,7 +552,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
               Text('Bonjour,', style: TextStyle(fontSize: 13,
                   color: Colors.white.withOpacity(0.5), fontWeight: FontWeight.w400)),
               const SizedBox(height: 3),
-              Text(widget.session.clientNom,
+              Text(_session.clientNom,
                   style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800,
                       color: Colors.white, letterSpacing: -0.6, height: 1.1),
                   maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -642,8 +629,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       onTap: () => Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => ClientProjectDetailScreen(
             projetId: project.id, projetNom: project.name,
-            clientEmail: widget.session.clientEmail,
-          ))),
+            clientEmail: _session.clientEmail,
+          ))).then((_) { if (mounted) _loadPortalData(); }),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(18),
@@ -756,19 +743,54 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     ]);
   }
 
-  Widget _buildRecentMsgs() => _card(
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _sectionHeader('Messages récents',
-          _messages.isNotEmpty ? () => _onTabSelected(3) : null),
-      const SizedBox(height: 16),
-      if (_loading) _loadingWidget()
-      else if (_messages.isEmpty) _emptyInline('Aucun message')
-      else ..._messages.take(3).toList().asMap().entries.map((e) => Column(children: [
-        if (e.key > 0) const Divider(height: 16, color: _kBorder),
-        _msgRow(e.value),
-      ])),
-    ]),
-  );
+  Widget _buildRecentMsgs() {
+    final unread = _loading ? <ClientMessage>[] : _messages.where((m) => m.isUnread).toList();
+    return _card(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Row(children: [
+            const Text('Messages',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800,
+                    color: _kText, letterSpacing: -0.4)),
+            if (unread.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  unread.length > 9 ? '9+' : '${unread.length}',
+                  style: const TextStyle(color: Colors.white,
+                      fontSize: 10, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ]),
+          if (_messages.isNotEmpty)
+            GestureDetector(
+              onTap: () => _onTabSelected(3),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('Voir tout', style: TextStyle(fontSize: 13,
+                    color: _kOrange.withOpacity(0.9), fontWeight: FontWeight.w600)),
+                const SizedBox(width: 3),
+                Icon(LucideIcons.arrowRight, size: 13,
+                    color: _kOrange.withOpacity(0.9)),
+              ]),
+            ),
+        ]),
+        const SizedBox(height: 16),
+        if (_loading) _loadingWidget()
+        else if (unread.isEmpty)
+          _emptyInline('Tous les messages lus ✓')
+        else ...unread.take(3).toList().asMap().entries.map((e) => Column(children: [
+          if (e.key > 0) const Divider(height: 16, color: _kBorder),
+          _msgRow(e.value),
+        ])),
+      ]),
+    );
+  }
 
   Widget _msgRow(ClientMessage msg) => GestureDetector(
     onTap: () => _openComments(msg.projetId, msg.projetNom),
@@ -873,24 +895,82 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   ]);
 
   // ── Documents ─────────────────────────────────────────────────────────────
-  Widget _buildDocumentsTab() => Column(children: [
-    _tabHeader('Documents',
-        '${_documents.length} fichier${_documents.length > 1 ? 's' : ''}',
-        const Color(0xFF3B82F6), LucideIcons.fileText),
-    _tabSheetContent(
-      _loading
-          ? _loadingWidget()
-          : _docsError != null
-              ? Center(child: Text('Erreur : $_docsError',
-                  style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13)))
-              : _documents.isEmpty
-                  ? _emptyState('Aucun document', LucideIcons.fileText)
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
-                      itemCount: _documents.length,
-                      itemBuilder: (_, i) => _buildDocumentTile(_documents[i])),
-    ),
-  ]);
+  Widget _buildDocumentsTab() {
+    final newDocs  = _documents.where((d) => d.isNew).toList();
+    final readDocs = _documents.where((d) => !d.isNew).toList();
+    final subtitle = _newDocCount > 0
+        ? '$_newDocCount nouveau${_newDocCount > 1 ? 'x' : ''}'
+        : '${_documents.length} fichier${_documents.length > 1 ? 's' : ''}';
+
+    return Column(children: [
+      _tabHeader('Documents', subtitle,
+          _newDocCount > 0 ? const Color(0xFFEF4444) : const Color(0xFF3B82F6),
+          LucideIcons.fileText),
+      _tabSheetContent(
+        _loading
+            ? _loadingWidget()
+            : _docsError != null
+                ? Center(child: Text('Erreur : $_docsError',
+                    style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13)))
+                : _documents.isEmpty
+                    ? _emptyState('Aucun document', LucideIcons.fileText)
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
+                        children: [
+                          // ── Nouveaux documents ─────────────────────────
+                          if (newDocs.isNotEmpty) ...[
+                            _docsSection(
+                              label: 'Nouveaux',
+                              count: newDocs.length,
+                              color: const Color(0xFFEF4444),
+                            ),
+                            const SizedBox(height: 10),
+                            ...newDocs.map(_buildDocumentTile),
+                            if (readDocs.isNotEmpty) const SizedBox(height: 20),
+                          ],
+                          // ── Documents déjà consultés ───────────────────
+                          if (readDocs.isNotEmpty) ...[
+                            if (newDocs.isNotEmpty)
+                              _docsSection(
+                                label: 'Déjà consultés',
+                                count: readDocs.length,
+                                color: _kMuted,
+                              ),
+                            const SizedBox(height: 10),
+                            ...readDocs.map(_buildDocumentTile),
+                          ],
+                        ],
+                      ),
+      ),
+    ]);
+  }
+
+  Widget _docsSection({required String label, required int count, required Color color}) {
+    return Row(children: [
+      Container(
+        width: 28, height: 28,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(LucideIcons.fileText, size: 13, color: color),
+      ),
+      const SizedBox(width: 10),
+      Text(label, style: TextStyle(
+          fontSize: 13, fontWeight: FontWeight.w800,
+          color: color, letterSpacing: -0.2)),
+      const SizedBox(width: 8),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text('$count', style: TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+      ),
+    ]);
+  }
 
   // ── Messages ──────────────────────────────────────────────────────────────
   Widget _buildMessagesTab() => Column(children: [
@@ -920,19 +1000,45 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _kSurface, borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Color(0x07000000),
-            blurRadius: 8, offset: Offset(0, 2))],
+        color: _kSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: doc.isNew
+            ? Border.all(color: const Color(0xFFEF4444).withOpacity(0.25))
+            : null,
+        boxShadow: [
+          if (doc.isNew)
+            BoxShadow(color: const Color(0xFFEF4444).withOpacity(0.07),
+                blurRadius: 12, offset: const Offset(0, 4)),
+          const BoxShadow(color: Color(0x07000000),
+              blurRadius: 8, offset: Offset(0, 2)),
+        ],
       ),
       child: Row(children: [
-        Container(width: 44, height: 44,
+        Stack(clipBehavior: Clip.none, children: [
+          Container(
+            width: 44, height: 44,
             decoration: BoxDecoration(color: cc.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12)),
-            child: Icon(doc.icon, size: 20, color: cc)),
+            child: Icon(doc.icon, size: 20, color: cc),
+          ),
+          if (doc.isNew)
+            Positioned(
+              top: -4, right: -4,
+              child: Container(
+                width: 12, height: 12,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEF4444),
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Color(0x44EF4444), blurRadius: 4)],
+                ),
+              ),
+            ),
+        ]),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(doc.name, style: TextStyle(fontSize: 13,
-              fontWeight: doc.isNew ? FontWeight.w700 : FontWeight.w600, color: _kText),
+              fontWeight: doc.isNew ? FontWeight.w700 : FontWeight.w600,
+              color: _kText),
               maxLines: 1, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 5),
           Row(children: [
@@ -947,7 +1053,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(color: const Color(0xFF10B981),
+                decoration: BoxDecoration(color: const Color(0xFFEF4444),
                     borderRadius: BorderRadius.circular(6)),
                 child: const Text('NOUVEAU', style: TextStyle(color: Colors.white,
                     fontSize: 8, fontWeight: FontWeight.w800)),
@@ -958,6 +1064,11 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
             ],
           ]),
         ])),
+        const SizedBox(width: 8),
+        Icon(LucideIcons.chevronRight, size: 14,
+            color: doc.isNew
+                ? const Color(0xFFEF4444).withOpacity(0.5)
+                : _kMuted.withOpacity(0.3)),
       ]),
     );
   }
@@ -1030,6 +1141,24 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   // PROFILE TAB
   // ══════════════════════════════════════════════════════════════════════════
 
+  void _showChangePasswordDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ChangePasswordSheet(
+        session: _session,
+        onSuccess: (updated) {
+          setState(() => _session = updated);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Mot de passe mis à jour'),
+            backgroundColor: _kOrange,
+          ));
+        },
+      ),
+    );
+  }
+
   Widget _buildProfileTab() => SingleChildScrollView(
     child: Column(children: [
       // Bannière navy
@@ -1045,15 +1174,15 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
               boxShadow: [BoxShadow(color: _kOrange.withOpacity(0.45),
                   blurRadius: 22, offset: const Offset(0, 6))],
             ),
-            child: Center(child: Text(_initials(widget.session.clientNom),
+            child: Center(child: Text(_initials(_session.clientNom),
                 style: const TextStyle(color: Colors.white, fontSize: 26,
                     fontWeight: FontWeight.w900))),
           ),
           const SizedBox(height: 14),
-          Text(widget.session.clientNom, style: const TextStyle(fontSize: 20,
+          Text(_session.clientNom, style: const TextStyle(fontSize: 20,
               fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.4)),
           const SizedBox(height: 4),
-          Text(widget.session.clientEmail,
+          Text(_session.clientEmail,
               style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.5))),
           const SizedBox(height: 24),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -1068,7 +1197,6 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         ]),
       ),
 
-      // ✅ Sheet arrondie avec Transform.translate (pas de margin négative)
       Transform.translate(
         offset: const Offset(0, -24),
         child: Container(
@@ -1084,15 +1212,17 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                   fontWeight: FontWeight.w800,
                   color: _kMuted.withOpacity(0.6), letterSpacing: 1.0)),
               const SizedBox(height: 16),
-              _pRow(LucideIcons.user, 'Nom', widget.session.clientNom),
+              _pRow(LucideIcons.user, 'Nom', _session.clientNom),
               const Divider(height: 20, color: _kBorder),
-              _pRow(LucideIcons.mail, 'Email', widget.session.clientEmail),
+              _pRow(LucideIcons.mail, 'Email', _session.clientEmail),
+              const Divider(height: 20, color: _kBorder),
+              _pRow(LucideIcons.phone, 'Téléphone',
+                  _session.telephone?.isNotEmpty == true ? _session.telephone! : '—'),
             ])),
             const SizedBox(height: 12),
             _card(child: Column(children: [
               _pAction(LucideIcons.lock, 'Changer le mot de passe', _kOrange,
-                  () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => ClientChangePasswordScreen(session: widget.session)))),
+                  _showChangePasswordDialog),
               const Divider(height: 1, color: _kBorder, indent: 52),
               _pAction(LucideIcons.logOut, 'Se déconnecter',
                   const Color(0xFFEF4444), _logout),
@@ -1188,9 +1318,9 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ClientProjectDetailScreen(
         projetId: projetId, projetNom: projetNom,
-        clientEmail: widget.session.clientEmail, initialTabIndex: 2,
+        clientEmail: _session.clientEmail, initialTabIndex: 2,
       ),
-    ));
+    )).then((_) { if (mounted) _loadPortalData(); });
   }
 
   Future<void> _onTabSelected(int index) async {
@@ -1198,7 +1328,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     final now   = DateTime.now();
     final prefs = await SharedPreferences.getInstance();
     if (index == 3) {
-      await prefs.setString('last_msg_read_${widget.session.id}', now.toIso8601String());
+      await prefs.setString('last_msg_read_${_session.id}', now.toIso8601String());
       if (!mounted) return;
       setState(() {
         _lastMsgRead = now;
@@ -1210,7 +1340,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         )).toList();
       });
     } else if (index == 2) {
-      await prefs.setString('last_doc_read_${widget.session.id}', now.toIso8601String());
+      await prefs.setString('last_doc_read_${_session.id}', now.toIso8601String());
       if (!mounted) return;
       setState(() {
         _lastDocRead = now;
@@ -1227,5 +1357,285 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const ClientLoginScreen()));
+  }
+}
+
+// ── Change Password Bottom Sheet ──────────────────────────────────────────────
+
+class _ChangePasswordSheet extends StatefulWidget {
+  final ClientSession session;
+  final void Function(ClientSession) onSuccess;
+  const _ChangePasswordSheet({required this.session, required this.onSuccess});
+  @override
+  State<_ChangePasswordSheet> createState() => _ChangePasswordSheetState();
+}
+
+class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
+  final _newCtrl     = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+  bool _showNew     = false;
+  bool _showConfirm = false;
+  bool _loading     = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _newCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final newPass = _newCtrl.text.trim();
+    final confirm = _confirmCtrl.text.trim();
+    if (newPass.isEmpty || confirm.isEmpty) {
+      setState(() => _error = 'Veuillez remplir tous les champs.');
+      return;
+    }
+    if (newPass.length < 8) {
+      setState(() => _error = 'Le mot de passe doit contenir au moins 8 caractères.');
+      return;
+    }
+    if (newPass != confirm) {
+      setState(() => _error = 'Les mots de passe ne correspondent pas.');
+      return;
+    }
+    setState(() { _loading = true; _error = null; });
+    try {
+      await Supabase.instance.client
+          .from('client_portal_access')
+          .update({'password_raw': newPass, 'password_changed': true})
+          .eq('id', widget.session.id);
+
+      final updated = ClientSession(
+        id: widget.session.id,
+        projetId: widget.session.projetId,
+        clientNom: widget.session.clientNom,
+        clientEmail: widget.session.clientEmail,
+        passwordChanged: true,
+        telephone: widget.session.telephone,
+      );
+      await ClientAuthService.saveSession(updated);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.onSuccess(updated);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Erreur : ${e.toString().replaceAll('Exception: ', '')}';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + bottom),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        _SheetHandle(),
+        Row(children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF97316).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(LucideIcons.lock, size: 18, color: Color(0xFFF97316)),
+          ),
+          const SizedBox(width: 12),
+          const Text('Changer le mot de passe',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800,
+                  color: Color(0xFF0B1437))),
+        ]),
+        const SizedBox(height: 20),
+        _SheetField(
+          ctrl: _newCtrl,
+          label: 'Nouveau mot de passe',
+          hint: 'Minimum 8 caractères',
+          obscure: !_showNew,
+          showToggle: true,
+          onToggle: () => setState(() => _showNew = !_showNew),
+        ),
+        const SizedBox(height: 12),
+        _SheetField(
+          ctrl: _confirmCtrl,
+          label: 'Confirmer le mot de passe',
+          hint: 'Répétez le mot de passe',
+          obscure: !_showConfirm,
+          showToggle: true,
+          onToggle: () => setState(() => _showConfirm = !_showConfirm),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 10),
+          _SheetError(_error!),
+        ],
+        const SizedBox(height: 20),
+        _SheetButton(label: 'Confirmer', loading: _loading, onTap: _submit),
+      ]),
+    );
+  }
+}
+
+// ── Shared sheet widgets ──────────────────────────────────────────────────────
+
+class _SheetHandle extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 38, height: 4,
+    margin: const EdgeInsets.only(bottom: 20),
+    decoration: BoxDecoration(
+      color: const Color(0xFFE2E8F0),
+      borderRadius: BorderRadius.circular(4),
+    ),
+  );
+}
+
+class _SheetField extends StatelessWidget {
+  final TextEditingController ctrl;
+  final String label, hint;
+  final bool obscure, showToggle;
+  final VoidCallback? onToggle;
+  final TextInputType? keyboardType;
+  const _SheetField({
+    required this.ctrl, required this.label, required this.hint,
+    this.obscure = false, this.showToggle = false, this.onToggle,
+    this.keyboardType,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+          color: Color(0xFF64748B), letterSpacing: 0.2)),
+      const SizedBox(height: 7),
+      TextField(
+        controller: ctrl,
+        obscureText: obscure,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 14, color: Color(0xFF0B1437)),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: Color(0xFFD1D5DB)),
+          suffixIcon: showToggle && onToggle != null
+              ? GestureDetector(
+                  onTap: onToggle,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: Icon(
+                      obscure ? LucideIcons.eye : LucideIcons.eyeOff,
+                      size: 18, color: const Color(0xFF64748B),
+                    ),
+                  ),
+                )
+              : null,
+          suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+          filled: true,
+          fillColor: const Color(0xFFF9FAFB),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFF97316), width: 2)),
+        ),
+      ),
+    ]);
+  }
+}
+
+class _SheetError extends StatelessWidget {
+  final String message;
+  const _SheetError(this.message);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEF4444).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.3)),
+      ),
+      child: Row(children: [
+        const Icon(LucideIcons.alertCircle, size: 14, color: Color(0xFFEF4444)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(message,
+            style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13))),
+      ]),
+    );
+  }
+}
+
+class _SheetButton extends StatelessWidget {
+  final String label;
+  final bool loading;
+  final VoidCallback onTap;
+  const _SheetButton({required this.label, required this.loading, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: loading ? null : onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFF97316),
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(vertical: 15),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        child: loading
+            ? const SizedBox(width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+            : Text(label, style: const TextStyle(color: Colors.white,
+                fontSize: 14, fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+}
+
+// ── Badge de navigation ───────────────────────────────────────────────────────
+class _NavBadge extends StatelessWidget {
+  final int count;
+  const _NavBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : count > 9 ? '9+' : '$count';
+    final wide  = count > 9;
+    return Container(
+      width:  wide ? null : 18,
+      height: 18,
+      padding: wide ? const EdgeInsets.symmetric(horizontal: 5) : null,
+      decoration: BoxDecoration(
+        color: const Color(0xFFEF4444),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: _kNavBar, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFEF4444).withOpacity(0.55),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              height: 1.0,
+            )),
+      ),
+    );
   }
 }

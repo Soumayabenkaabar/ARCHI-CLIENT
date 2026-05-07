@@ -9,6 +9,7 @@ class ClientSession {
   final String  clientNom;
   final String  clientEmail;
   final bool    passwordChanged;
+  final String? telephone;
 
   const ClientSession({
     required this.id,
@@ -16,6 +17,7 @@ class ClientSession {
     required this.clientNom,
     required this.clientEmail,
     this.passwordChanged = false,
+    this.telephone,
   });
 
   Map<String, dynamic> toJson() => {
@@ -24,6 +26,7 @@ class ClientSession {
     'client_nom':       clientNom,
     'client_email':     clientEmail,
     'password_changed': passwordChanged,
+    'telephone':        telephone,
   };
 
   factory ClientSession.fromJson(Map<String, dynamic> j) => ClientSession(
@@ -32,6 +35,7 @@ class ClientSession {
     clientNom:       j['client_nom']       as String,
     clientEmail:     j['client_email']     as String,
     passwordChanged: j['password_changed'] as bool? ?? false,
+    telephone:       j['telephone']        as String?,
   );
 }
 
@@ -43,24 +47,38 @@ class ClientAuthService {
     final trimEmail    = email.trim().toLowerCase();
     final trimPassword = password.trim();
 
-    // 1. Récupère l'accès client (sans filtre actif pour distinguer les cas)
+    // 1. Récupère tous les accès (sans limit — plusieurs lignes possibles)
     final List<dynamic> rows;
     try {
       rows = await _supa
           .from('client_portal_access')
-          .select('id, projet_id, client_nom, client_email, actif, password_changed, password_raw')
+          .select('id, projet_id, client_nom, client_email, actif, password_changed, password_raw, telephone')
           .eq('client_email', trimEmail)
-          .order('created_at', ascending: false)
-          .limit(1);
+          .order('created_at', ascending: false);
     } catch (e) {
-        throw Exception('Erreur de connexion. Vérifiez votre connexion internet.');
+      throw Exception('Erreur de connexion. Vérifiez votre connexion internet.');
     }
 
     if (rows.isEmpty) {
       throw Exception('Aucun compte trouvé pour cet email.');
     }
 
-    final row    = Map<String, dynamic>.from(rows.first as Map);
+    // 2. Utilise la ligne d'authentification : celle qui a un mot de passe.
+    //    Les lignes "lien uniquement" (créées automatiquement pour les projets
+    //    supplémentaires) ont password_raw vide et ne servent pas à l'auth.
+    final authCandidates = rows.where((r) =>
+        ((r['password_raw'] as String?) ?? '').isNotEmpty).toList();
+
+    if (authCandidates.isEmpty) {
+      // Aucune ligne avec mot de passe → compte non configuré
+      final anyActif = rows.any((r) => (r['actif'] as bool?) ?? false);
+      if (!anyActif) {
+        throw Exception('Votre compte est désactivé. Contactez votre architecte.');
+      }
+      throw Exception('Mot de passe non configuré. Demandez à votre architecte de réinitialiser votre accès.');
+    }
+
+    final row    = Map<String, dynamic>.from(authCandidates.first as Map);
     final actif  = row['actif'] as bool? ?? false;
     final stored = (row['password_raw'] as String?) ?? '';
 
@@ -68,10 +86,10 @@ class ClientAuthService {
       throw Exception('Votre compte est désactivé. Contactez votre architecte.');
     }
 
-    // 2a. Vérification directe password_raw
-    bool authenticated = stored.isNotEmpty && stored == trimPassword;
+    // 3a. Vérification directe password_raw
+    bool authenticated = stored == trimPassword;
 
-    // 2b. Fallback Supabase Auth (clients créés via Auth ou ancienne méthode)
+    // 3b. Fallback Supabase Auth
     if (!authenticated) {
       try {
         await _supa.auth.signInWithPassword(email: trimEmail, password: trimPassword);
@@ -80,26 +98,10 @@ class ClientAuthService {
     }
 
     if (!authenticated) {
-      if (stored.isEmpty) {
-        throw Exception('Mot de passe non configuré. Demandez à votre architecte de réinitialiser votre accès.');
-      }
       throw Exception('Mot de passe incorrect.');
     }
 
-    // 3. Si projet_id est null → cherche dans projets
-    if (row['projet_id'] == null) {
-      final projetId = await _findProjetIdForClient(
-        email: trimEmail,
-        nom:   row['client_nom'] as String,
-      );
-      if (projetId != null) {
-        await _supa
-            .from('client_portal_access')
-            .update({'projet_id': projetId})
-            .eq('id', row['id']);
-        row['projet_id'] = projetId;
-      }
-    }
+    // 3. projet_id est stocké directement dans client_portal_access (FK)
 
     // 4. Met à jour last_login
     await _supa
@@ -110,39 +112,6 @@ class ClientAuthService {
     final session = ClientSession.fromJson(row);
     await saveSession(session);
     return session;
-  }
-
-  /// Cherche un projet dont portail_client=true et dont le champ `client`
-  /// correspond à l'email OU au nom du client.
-  static Future<String?> _findProjetIdForClient({
-    required String email,
-    required String nom,
-  }) async {
-    // Tentative 1 : match sur l'email (champ texte `client`)
-    final byEmail = await _supa
-        .from('projets')
-        .select('id')
-        .ilike('client', email)
-        .eq('portail_client', true)
-        .limit(1);
-
-    if ((byEmail as List).isNotEmpty) {
-      return byEmail.first['id'] as String;
-    }
-
-    // Tentative 2 : match sur le nom du client
-    final byNom = await _supa
-        .from('projets')
-        .select('id')
-        .ilike('client', nom)
-        .eq('portail_client', true)
-        .limit(1);
-
-    if ((byNom as List).isNotEmpty) {
-      return byNom.first['id'] as String;
-    }
-
-    return null;
   }
 
   static Future<void> saveSession(ClientSession session) async {
@@ -158,26 +127,22 @@ class ClientAuthService {
 
       final saved = ClientSession.fromJson(jsonDecode(raw));
 
-      // Si la session sauvegardée n'a pas de projet_id, on re-tente le lookup
+      // Si la session locale n'a pas de projet_id, on relit la DB
       if (saved.projetId == null) {
-        final projetId = await _findProjetIdForClient(
-          email: saved.clientEmail,
-          nom: saved.clientNom,
-        );
+        final row = await _supa
+            .from('client_portal_access')
+            .select('projet_id')
+            .eq('id', saved.id)
+            .maybeSingle();
+        final projetId = row?['projet_id'] as String?;
         if (projetId != null) {
-          // Met à jour en DB
-          await _supa
-              .from('client_portal_access')
-              .update({'projet_id': projetId})
-              .eq('id', saved.id);
-
-          // Met à jour la session locale
           final updated = ClientSession(
             id:              saved.id,
             projetId:        projetId,
             clientNom:       saved.clientNom,
             clientEmail:     saved.clientEmail,
             passwordChanged: saved.passwordChanged,
+            telephone:       saved.telephone,
           );
           await saveSession(updated);
           return updated;

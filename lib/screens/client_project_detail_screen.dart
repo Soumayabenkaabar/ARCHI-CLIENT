@@ -1,4 +1,5 @@
 // lib/screens/client_project_detail_screen.dart
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -86,6 +87,7 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
   final _commentCtrl = TextEditingController();
   bool _sendingComment = false;
   PlatformFile? _selectedFile;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -95,10 +97,12 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
       if (!_tabController.indexIsChanging) setState(() {});
     });
     _loadAll();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) => _loadAll());
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _tabController.dispose();
     _commentCtrl.dispose();
     super.dispose();

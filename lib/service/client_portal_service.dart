@@ -356,64 +356,73 @@ class ClientPortalService {
   }
 
   // ── Liste tous les projets accessibles par un client ─────────────────────
-  static Future<List<Map<String, dynamic>>> getProjetsForClient(String clientEmail) async {
+  static Future<List<Map<String, dynamic>>> getProjetsForClient(
+      String clientEmail, {String? clientsId, String? clientNom}) async {
     final trimEmail = clientEmail.trim().toLowerCase();
 
-    // RPC et fallback en parallèle — fusionne les résultats par ID.
-    // Nécessaire car la RPC peut manquer des projets liés seulement par texte,
-    // et le fallback peut manquer des projets si la RPC échoue.
-    final results = await Future.wait([
-      _supa
-          .rpc('get_client_projets', params: {'p_email': trimEmail})
-          .then((r) => (r as List)
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList())
-          .catchError((_) => <Map<String, dynamic>>[]),
-      _getProjetsDirectFallback(trimEmail),
-    ]);
-
-    final seenIds = <String>{};
-    final merged  = <Map<String, dynamic>>[];
-    for (final proj in [...results[0], ...results[1]]) {
-      final id = proj['id'] as String?;
-      if (id != null && seenIds.add(id)) merged.add(proj);
-    }
-    return merged;
-  }
-
-  static Future<List<Map<String, dynamic>>> _getProjetsDirectFallback(String trimEmail) async {
+    // ── RPC SECURITY DEFINER (contourne le RLS — source principale) ───────────
     try {
-      final accesses = await _supa
+      final rows = await _supa
+          .rpc('get_client_projets', params: {'p_email': trimEmail});
+      final list = (rows as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      if (list.isNotEmpty) return list;
+    } catch (_) {}
+
+    // ── Fallbacks directs (si RLS permissif ou RPC absent) ───────────────────
+    final ids = <String>{};
+
+    // F1 : client_portal_access.actif = true → projet_id
+    try {
+      final rows = await _supa
           .from('client_portal_access')
-          .select('id, projet_id, client_nom')
+          .select('projet_id')
           .eq('client_email', trimEmail)
           .eq('actif', true);
+      (rows as List)
+          .map((r) => r['projet_id'] as String?)
+          .whereType<String>()
+          .forEach(ids.add);
+    } catch (_) {}
 
-      final accessList = accesses as List;
-      final linkedIds  = <String>{};
+    // F2 : projets.client_id = clientsId (stocké en session au login)
+    if (clientsId != null && clientsId.isNotEmpty) {
+      try {
+        final rows = await _supa
+            .from('projets')
+            .select('id')
+            .eq('client_id', clientsId)
+            .eq('portail_client', true);
+        (rows as List)
+            .map((r) => r['id'] as String?)
+            .whereType<String>()
+            .forEach(ids.add);
+      } catch (_) {}
+    }
 
-      // Niveau 1 : projet_id direct (FK)
-      for (final access in accessList) {
-        final pid = access['projet_id'] as String?;
-        if (pid != null) linkedIds.add(pid);
-      }
+    // F3 : projets.client ilike clientNom (dernier recours par nom)
+    if (ids.isEmpty && clientNom != null && clientNom.isNotEmpty) {
+      try {
+        final rows = await _supa
+            .from('projets')
+            .select('id')
+            .ilike('client', '%$clientNom%')
+            .eq('portail_client', true);
+        (rows as List)
+            .map((r) => r['id'] as String?)
+            .whereType<String>()
+            .forEach(ids.add);
+      } catch (_) {}
+    }
 
-      // Niveau 2 : clients.email → projets.client_id
-      linkedIds.addAll(await _findAllProjetsByClientTable(trimEmail));
+    if (ids.isEmpty) return [];
 
-      // Niveau 3 : champ texte projets.client
-      final nom = accessList.isNotEmpty
-          ? (accessList.first['client_nom'] as String?) ?? ''
-          : '';
-      final textIds = await _findAllProjetsByText(email: trimEmail, nom: nom);
-      linkedIds.addAll(textIds);
-
-      if (linkedIds.isEmpty) return [];
-
+    try {
       final rows = await _supa
           .from('projets')
           .select()
-          .inFilter('id', linkedIds.toList())
+          .inFilter('id', ids.toList())
           .order('created_at', ascending: false);
       return (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
     } catch (_) {
@@ -436,36 +445,4 @@ class ClientPortalService {
     } catch (_) {}
   }
 
-  // clients.email → clients.id → projets.client_id
-  static Future<Set<String>> _findAllProjetsByClientTable(String email) async {
-    try {
-      final clientRows = await _supa
-          .from('clients').select('id').eq('email', email);
-      if ((clientRows as List).isEmpty) return {};
-      final clientIds = (clientRows as List).map((r) => r['id'] as String).toList();
-      final projetRows = await _supa
-          .from('projets').select('id').inFilter('client_id', clientIds);
-      return (projetRows as List).map((r) => r['id'] as String).toSet();
-    } catch (_) {
-      return {};
-    }
-  }
-
-  // Champ texte projets.client — retourne tous les projets correspondants
-  static Future<Set<String>> _findAllProjetsByText({required String email, required String nom}) async {
-    final ids = <String>{};
-    try {
-      if (email.isNotEmpty) {
-        final r = await _supa.from('projets').select('id')
-            .ilike('client', '%$email%').eq('portail_client', true);
-        ids.addAll((r as List).map((e) => e['id'] as String));
-      }
-      if (nom.isNotEmpty) {
-        final r = await _supa.from('projets').select('id')
-            .ilike('client', '%$nom%').eq('portail_client', true);
-        ids.addAll((r as List).map((e) => e['id'] as String));
-      }
-    } catch (_) {}
-    return ids;
-  }
 }

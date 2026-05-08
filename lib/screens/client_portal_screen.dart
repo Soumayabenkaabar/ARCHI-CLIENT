@@ -1,4 +1,5 @@
 // lib/screens/client_portal_screen.dart
+import 'dart:async';
 import 'package:archi_client/screens/client_project_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -90,6 +91,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   String? _docsError;
   DateTime _lastMsgRead = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastDocRead = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _refreshTimer;
 
   int get _unreadMsgCount => _messages.where((m) => m.isUnread).length;
   int get _newDocCount    => _documents.where((d) => d.isNew).length;
@@ -109,6 +111,13 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     super.initState();
     _session = widget.session;
     _loadPortalData();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) => _loadPortalData());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadPortalData() async {
@@ -119,7 +128,9 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     _lastDocRead = docTs != null ? DateTime.tryParse(docTs) ?? _lastDocRead : _lastDocRead;
 
     final projetsData = await ClientPortalService
-        .getProjetsForClient(_session.clientEmail)
+        .getProjetsForClient(_session.clientEmail,
+            clientsId: _session.clientsId,
+            clientNom: _session.clientNom)
         .catchError((_) => <Map<String, dynamic>>[]);
 
     List<Map<String, dynamic>> docsData = [];

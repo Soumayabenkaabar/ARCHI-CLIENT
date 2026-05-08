@@ -10,6 +10,7 @@ class ClientSession {
   final String  clientEmail;
   final bool    passwordChanged;
   final String? telephone;
+  final String? clientsId; // clients.id dans la table clients
 
   const ClientSession({
     required this.id,
@@ -18,6 +19,7 @@ class ClientSession {
     required this.clientEmail,
     this.passwordChanged = false,
     this.telephone,
+    this.clientsId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -27,6 +29,7 @@ class ClientSession {
     'client_email':     clientEmail,
     'password_changed': passwordChanged,
     'telephone':        telephone,
+    'clients_id':       clientsId,
   };
 
   factory ClientSession.fromJson(Map<String, dynamic> j) => ClientSession(
@@ -36,6 +39,7 @@ class ClientSession {
     clientEmail:     j['client_email']     as String,
     passwordChanged: j['password_changed'] as bool? ?? false,
     telephone:       j['telephone']        as String?,
+    clientsId:       j['clients_id']       as String?,
   );
 }
 
@@ -101,15 +105,33 @@ class ClientAuthService {
       throw Exception('Mot de passe incorrect.');
     }
 
-    // 3. projet_id est stocké directement dans client_portal_access (FK)
+    // 4. Vérifie acces_portail + récupère clients.id pour les requêtes projets
+    bool accesPortail = true;
+    String? clientsId;
+    try {
+      final clientRows = await _supa
+          .from('clients')
+          .select('id, acces_portail')
+          .ilike('email', trimEmail)
+          .limit(1);
+      if ((clientRows as List).isNotEmpty) {
+        final cr = clientRows.first as Map;
+        accesPortail = cr['acces_portail'] as bool? ?? true;
+        clientsId    = cr['id'] as String?;
+      }
+    } catch (_) {}
 
-    // 4. Met à jour last_login
+    if (!accesPortail) {
+      throw Exception('Votre accès au portail est désactivé. Contactez votre architecte.');
+    }
+
+    // 5. Met à jour last_login
     await _supa
         .from('client_portal_access')
         .update({'last_login': DateTime.now().toIso8601String()})
         .eq('id', row['id']);
 
-    final session = ClientSession.fromJson(row);
+    final session = ClientSession.fromJson({...row, 'clients_id': clientsId});
     await saveSession(session);
     return session;
   }

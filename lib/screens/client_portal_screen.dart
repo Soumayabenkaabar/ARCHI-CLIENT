@@ -21,11 +21,13 @@ class ClientProject {
 
 class ClientDocument {
   final String name, category, date;
+  final String projetId, projetNom;
   final IconData icon;
   final bool isNew;
   final int uploadedAtMs;
   const ClientDocument({
     required this.name, required this.category, required this.date, required this.icon,
+    this.projetId = '', this.projetNom = '',
     this.isNew = false, this.uploadedAtMs = 0,
   });
 }
@@ -124,6 +126,11 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     String? docsErr;
     try {
       docsData = await ClientPortalService.getRecentDocuments(_session.clientEmail);
+      final projetNomMap = { for (final p in projetsData) p['id'].toString(): (p['titre'] as String?) ?? '' };
+      docsData = docsData.map((d) => {
+        ...d,
+        '_projet_nom': projetNomMap[(d['projet_id'] as String?) ?? ''] ?? '',
+      }).toList();
     } catch (e) { docsErr = e.toString(); }
 
     final msgsData = <Map<String, dynamic>>[];
@@ -212,6 +219,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       category: _docTypeLabels[type.toLowerCase()] ?? type.toUpperCase(),
       date: _formatFullDate(uploadedIso.isNotEmpty ? uploadedIso : null),
       icon: _docIcon(type), uploadedAtMs: uploadedMs,
+      projetId: (d['projet_id'] as String?) ?? '',
+      projetNom: (d['_projet_nom'] as String?) ?? '',
       isNew: uploadedMs > 0 && uploadedMs > _lastDocRead.millisecondsSinceEpoch,
     );
   }
@@ -896,11 +905,10 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
 
   // ── Documents ─────────────────────────────────────────────────────────────
   Widget _buildDocumentsTab() {
-    final newDocs  = _documents.where((d) => d.isNew).toList();
-    final readDocs = _documents.where((d) => !d.isNew).toList();
+    final newDocs = _documents.where((d) => d.isNew).toList();
     final subtitle = _newDocCount > 0
         ? '$_newDocCount nouveau${_newDocCount > 1 ? 'x' : ''}'
-        : '${_documents.length} fichier${_documents.length > 1 ? 's' : ''}';
+        : 'Aucun nouveau document';
 
     return Column(children: [
       _tabHeader('Documents', subtitle,
@@ -912,33 +920,18 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
             : _docsError != null
                 ? Center(child: Text('Erreur : $_docsError',
                     style: const TextStyle(color: Color(0xFFEF4444), fontSize: 13)))
-                : _documents.isEmpty
-                    ? _emptyState('Aucun document', LucideIcons.fileText)
+                : newDocs.isEmpty
+                    ? _emptyState('Aucun nouveau document', LucideIcons.fileText)
                     : ListView(
                         padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
                         children: [
-                          // ── Nouveaux documents ─────────────────────────
-                          if (newDocs.isNotEmpty) ...[
-                            _docsSection(
-                              label: 'Nouveaux',
-                              count: newDocs.length,
-                              color: const Color(0xFFEF4444),
-                            ),
-                            const SizedBox(height: 10),
-                            ...newDocs.map(_buildDocumentTile),
-                            if (readDocs.isNotEmpty) const SizedBox(height: 20),
-                          ],
-                          // ── Documents déjà consultés ───────────────────
-                          if (readDocs.isNotEmpty) ...[
-                            if (newDocs.isNotEmpty)
-                              _docsSection(
-                                label: 'Déjà consultés',
-                                count: readDocs.length,
-                                color: _kMuted,
-                              ),
-                            const SizedBox(height: 10),
-                            ...readDocs.map(_buildDocumentTile),
-                          ],
+                          _docsSection(
+                            label: 'Nouveaux',
+                            count: newDocs.length,
+                            color: const Color(0xFFEF4444),
+                          ),
+                          const SizedBox(height: 10),
+                          ...newDocs.map(_buildDocumentTile),
                         ],
                       ),
       ),
@@ -973,30 +966,45 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   }
 
   // ── Messages ──────────────────────────────────────────────────────────────
-  Widget _buildMessagesTab() => Column(children: [
-    _tabHeader(
-      'Messages',
-      _unreadMsgCount > 0
-          ? '$_unreadMsgCount non lu${_unreadMsgCount > 1 ? 's' : ''}'
-          : '${_messages.length} message${_messages.length > 1 ? 's' : ''}',
-      const Color(0xFFEF4444), LucideIcons.messageSquare,
-    ),
-    _tabSheetContent(
-      _loading
-          ? _loadingWidget()
-          : _messages.isEmpty
-              ? _emptyState('Aucun message', LucideIcons.messageSquare)
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
-                  itemCount: _messages.length,
-                  itemBuilder: (_, i) => _buildMessageTile(_messages[i])),
-    ),
-  ]);
+  Widget _buildMessagesTab() {
+    final newMessages = _messages.where((m) => m.isUnread).toList();
+    return Column(children: [
+      _tabHeader(
+        'Messages',
+        _unreadMsgCount > 0
+            ? '$_unreadMsgCount non lu${_unreadMsgCount > 1 ? 's' : ''}'
+            : 'Aucun nouveau message',
+        const Color(0xFFEF4444), LucideIcons.messageSquare,
+      ),
+      _tabSheetContent(
+        _loading
+            ? _loadingWidget()
+            : newMessages.isEmpty
+                ? _emptyState('Aucun nouveau message', LucideIcons.messageSquare)
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
+                    itemCount: newMessages.length,
+                    itemBuilder: (_, i) => _buildMessageTile(newMessages[i])),
+      ),
+    ]);
+  }
 
   // ── Document tile ─────────────────────────────────────────────────────────
+  void _openDocumentProjet(ClientDocument doc) {
+    if (doc.projetId.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ClientProjectDetailScreen(
+        projetId: doc.projetId, projetNom: doc.projetNom,
+        clientEmail: _session.clientEmail, initialTabIndex: 1,
+      ),
+    )).then((_) { if (mounted) _loadPortalData(); });
+  }
+
   Widget _buildDocumentTile(ClientDocument doc) {
     final cc = _kDocColors[doc.category] ?? _kOrange;
-    return Container(
+    return GestureDetector(
+      onTap: () => _openDocumentProjet(doc),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1070,6 +1078,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                 ? const Color(0xFFEF4444).withOpacity(0.5)
                 : _kMuted.withOpacity(0.3)),
       ]),
+      ),
     );
   }
 
@@ -1327,28 +1336,11 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     setState(() => _selectedIndex = index);
     final now   = DateTime.now();
     final prefs = await SharedPreferences.getInstance();
+    // Save timestamp for next session without resetting isNew/isUnread in current session
     if (index == 3) {
       await prefs.setString('last_msg_read_${_session.id}', now.toIso8601String());
-      if (!mounted) return;
-      setState(() {
-        _lastMsgRead = now;
-        _messages = _messages.map((m) => ClientMessage(
-          senderName: m.senderName, senderRole: m.senderRole, initials: m.initials,
-          preview: m.preview, time: m.time, isUnread: false,
-          avatarColor: m.avatarColor, projetId: m.projetId, projetNom: m.projetNom,
-          createdAtMs: m.createdAtMs,
-        )).toList();
-      });
     } else if (index == 2) {
       await prefs.setString('last_doc_read_${_session.id}', now.toIso8601String());
-      if (!mounted) return;
-      setState(() {
-        _lastDocRead = now;
-        _documents = _documents.map((d) => ClientDocument(
-          name: d.name, category: d.category, date: d.date,
-          icon: d.icon, isNew: false, uploadedAtMs: d.uploadedAtMs,
-        )).toList();
-      });
     }
   }
 

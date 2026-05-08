@@ -30,9 +30,10 @@ class _Photo {
 }
 
 class _Document {
-  final String id, nom, type, date, url;
+  final String id, nom, type, date, url, version;
   final IconData icon;
-  const _Document({required this.id, required this.nom, required this.type, required this.date, required this.url, required this.icon});
+  final int uploadedAtMs;
+  const _Document({required this.id, required this.nom, required this.type, required this.date, required this.url, required this.icon, this.version = '', this.uploadedAtMs = 0});
 }
 
 class _Commentaire {
@@ -149,25 +150,53 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
     }
   }
 
+  static final _versionRegex = RegExp(r'[vV](\d+(?:[._]\d+)*)', caseSensitive: false);
+
+  String _extractVersion(String nom) {
+    final m = _versionRegex.firstMatch(nom);
+    return m != null ? 'v${m.group(1)!.replaceAll('_', '.')}' : '';
+  }
+
+  double _versionToNum(String v) {
+    if (v.isEmpty) return -1;
+    final parts = v.replaceFirst(RegExp(r'^v', caseSensitive: false), '').split('.');
+    double num = 0;
+    for (int i = 0; i < parts.length; i++) {
+      num += (double.tryParse(parts[i]) ?? 0) / (i == 0 ? 1 : 100 * i);
+    }
+    return num;
+  }
+
   Future<void> _loadDocuments() async {
     try {
       final data = await ClientPortalService.getDocumentsForProjet(widget.projetId);
       if (!mounted) return;
-      setState(() {
-        _documents = data.map((d) {
-          final type = (d['type'] as String?) ?? 'pdf';
-          final rawNom = (d['nom'] as String?) ?? 'Document';
-          return _Document(
-            id:   d['id']?.toString() ?? '',
-            nom:  _cleanDocName(rawNom),
-            type: _docTypeLabel(type),
-            date: _formatDate((d['uploaded_at'] as String?) ?? ''),
-            url:  (d['url'] as String?) ?? '',
-            icon: _docIcon(type),
-          );
-        }).toList();
-        _loadingDocuments = false;
+      final docs = data.map((d) {
+        final type = (d['type'] as String?) ?? 'pdf';
+        final rawNom = (d['nom'] as String?) ?? 'Document';
+        final uploadedIso = (d['uploaded_at'] as String?) ?? '';
+        int uploadedMs = 0;
+        try { uploadedMs = DateTime.parse(uploadedIso).millisecondsSinceEpoch; } catch (_) {}
+        final cleanName = _cleanDocName(rawNom);
+        return _Document(
+          id:           d['id']?.toString() ?? '',
+          nom:          cleanName,
+          type:         _docTypeLabel(type),
+          date:         _formatDate(uploadedIso),
+          url:          (d['url'] as String?) ?? '',
+          icon:         _docIcon(type),
+          version:      _extractVersion(cleanName),
+          uploadedAtMs: uploadedMs,
+        );
+      }).toList();
+      // Tri : version desc (documents avec version les plus récentes en premier), puis date desc
+      docs.sort((a, b) {
+        final va = _versionToNum(a.version);
+        final vb = _versionToNum(b.version);
+        if (va >= 0 && vb >= 0 && va != vb) return vb.compareTo(va);
+        return b.uploadedAtMs.compareTo(a.uploadedAtMs);
       });
+      setState(() { _documents = docs; _loadingDocuments = false; });
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingDocuments = false);
@@ -655,7 +684,29 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _sectionTitle('Documents du projet', LucideIcons.folder),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
+        if (!_loadingDocuments && _documents.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(children: [
+              const Icon(LucideIcons.arrowDownNarrowWide, size: 12, color: _kTextSecondary),
+              const SizedBox(width: 4),
+              Text(
+                'Trié par version puis date',
+                style: const TextStyle(fontSize: 11, color: _kTextSecondary),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _kAccentOrange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text('${_documents.length} fichier${_documents.length > 1 ? 's' : ''}',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _kAccentOrange)),
+              ),
+            ]),
+          ),
         if (_loadingDocuments)
           _loadingCard()
         else if (_documents.isEmpty)
@@ -698,6 +749,17 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
                 decoration: BoxDecoration(color: typeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
                 child: Text(doc.type, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: typeColor)),
               ),
+              if (doc.version.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(doc.version, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF6366F1))),
+                ),
+              ],
               const SizedBox(width: 8),
               if (doc.date.isNotEmpty)
                 Text(doc.date, style: const TextStyle(fontSize: 11, color: _kTextSecondary)),

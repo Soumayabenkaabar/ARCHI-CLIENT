@@ -14,7 +14,8 @@
       "PowerShell(flutter analyze *)",
       "PowerShell(Get-Content \"C:\\\\Users\\\\achra\\\\analyze2.txt\" | Where-Object { $_ -match \"error -\" })",
       "PowerShell(Get-Content \"C:\\\\Users\\\\achra\\\\analyze3.txt\" | Where-Object { $_ -notmatch \"withOpacity\" -and $_ -notmatch \"^$\" -and $_ -notmatch \"Analyzing\" -and $_ -notmatch \"info -\" -and $_ -notmatch \"warning -\" } | Select-Object -Last 15)",
-      "PowerShell(Get-Content \"C:\\\\Users\\\\achra\\\\analyze4.txt\" | Where-Object { $_ -notmatch \"withOpacity\" -and $_ -notmatch \"unnecessary_import\" -and $_ -notmatch \"deprecated\" -and $_ -notmatch \"asset_directory\" -and $_ -notmatch \"^$\" -and $_ -notmatch \"Analyzing\" -and $_ -notmatch \"info -\" -and $_ -notmatch \"warning -\" } | Select-Object -Last 10)"
+      "PowerShell(Get-Content \"C:\\\\Users\\\\achra\\\\analyze4.txt\" | Where-Object { $_ -notmatch \"withOpacity\" -and $_ -notmatch \"unnecessary_import\" -and $_ -notmatch \"deprecated\" -and $_ -notmatch \"asset_directory\" -and $_ -notmatch \"^$\" -and $_ -notmatch \"Analyzing\" -and $_ -notmatch \"info -\" -and $_ -notmatch \"warning -\" } | Select-Object -Last 10)",
+      "Bash(Get-ChildItem *)"
     ]
   }
 }

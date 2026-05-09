@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../service/client_auth_service.dart';
 import '../service/client_portal_service.dart';
+import '../service/ai_client_service.dart';
+import 'notifications_screen.dart';
 import 'client_login_screen.dart';
 
 // ── Modèles ───────────────────────────────────────────────────────────────────
@@ -84,10 +86,13 @@ class ClientPortalScreen extends StatefulWidget {
 class _ClientPortalScreenState extends State<ClientPortalScreen> {
   late ClientSession _session;
   int _selectedIndex = 0;
-  List<ClientProject>  _projects  = [];
-  List<ClientDocument> _documents = [];
-  List<ClientMessage>  _messages  = [];
-  bool _loading = true;
+  List<ClientProject>          _projects   = [];
+  List<ClientDocument>         _documents  = [];
+  List<ClientMessage>          _messages   = [];
+  List<Map<String, dynamic>>   _projetsRaw = [];
+  bool    _loading           = true;
+  String? _aiSummary;
+  bool    _aiSummaryLoading  = false;
   String? _docsError;
   DateTime _lastMsgRead = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _lastDocRead = DateTime.fromMillisecondsSinceEpoch(0);
@@ -158,12 +163,27 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
 
     if (!mounted) return;
     setState(() {
-      _projects  = projetsData.map(_mapProjet).toList();
-      _documents = docsData.map(_mapDocument).toList();
-      _messages  = msgsData.map(_mapMessage).toList().take(30).toList();
-      _docsError = docsErr;
-      _loading   = false;
+      _projects   = projetsData.map(_mapProjet).toList();
+      _documents  = docsData.map(_mapDocument).toList();
+      _messages   = msgsData.map(_mapMessage).toList().take(30).toList();
+      _docsError  = docsErr;
+      _loading    = false;
+      _projetsRaw = projetsData;
     });
+    if (projetsData.isNotEmpty && _aiSummary == null && !_aiSummaryLoading) {
+      _loadAiSummary(projetsData.first);
+    }
+  }
+
+  Future<void> _loadAiSummary(Map<String, dynamic> projet) async {
+    if (_aiSummaryLoading) return;
+    setState(() => _aiSummaryLoading = true);
+    try {
+      final summary = await AiClientService.resumeSimple(projet);
+      if (mounted) setState(() { _aiSummary = summary; _aiSummaryLoading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _aiSummaryLoading = false);
+    }
   }
 
   static const _statutLabels = {
@@ -282,7 +302,31 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     return Scaffold(
       backgroundColor: _kNavy,
       body: isWide ? _buildDesktop() : _buildMobile(),
+      floatingActionButton: _projects.isEmpty
+          ? null
+          : FloatingActionButton(
+              onPressed: _openChatbot,
+              backgroundColor: _kOrange,
+              elevation: 4,
+              child: const Icon(LucideIcons.messageCircle, color: Colors.white, size: 22),
+            ),
     );
+  }
+
+  void _openChatbot() {
+    final projet = _projetsRaw.isNotEmpty ? _projetsRaw.first : <String, dynamic>{};
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ChatbotSheet(projet: projet, clientNom: _session.clientNom),
+    );
+  }
+
+  void _openNotifications() {
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => NotificationsScreen(session: _session, projets: _projetsRaw),
+    ));
   }
 
   // ── No project ────────────────────────────────────────────────────────────
@@ -399,6 +443,19 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         );
       }))),
       GestureDetector(
+        onTap: _openNotifications,
+        child: Container(
+          width: 36, height: 36,
+          margin: const EdgeInsets.only(right: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: const Icon(LucideIcons.bell, size: 15, color: Colors.white),
+        ),
+      ),
+      GestureDetector(
         onTap: _logout,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -436,6 +493,17 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       const SizedBox(width: 10),
       const Expanded(child: Text('Portail Client',
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white))),
+      GestureDetector(
+        onTap: _openNotifications,
+        child: Container(
+          width: 34, height: 34,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(LucideIcons.bell, color: Colors.white, size: 16),
+        ),
+      ),
     ]),
   );
 
@@ -512,6 +580,10 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
           ),
           padding: EdgeInsets.fromLTRB(isWide ? 32 : 18, 24, isWide ? 32 : 18, 40),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (!_loading && _projects.isNotEmpty) ...[
+              _buildAiSummaryCard(),
+              const SizedBox(height: 20),
+            ],
             _sectionHeader('Mes Projets', () => _onTabSelected(1)),
             const SizedBox(height: 14),
             if (_loading)
@@ -538,6 +610,68 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     ]),
     );
   }
+
+  // ── Carte IA résumé ───────────────────────────────────────────────────────
+  Widget _buildAiSummaryCard() => Container(
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [_kOrange.withOpacity(0.09), _kOrange.withOpacity(0.04)],
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: _kOrange.withOpacity(0.18)),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(
+            color: _kOrange.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: const Icon(LucideIcons.sparkles, size: 15, color: _kOrange),
+        ),
+        const SizedBox(width: 10),
+        const Text('Mon projet en résumé',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
+              color: _kText, letterSpacing: -0.3)),
+      ]),
+      const SizedBox(height: 12),
+      if (_aiSummaryLoading)
+        Row(children: [
+          const SizedBox(width: 18, height: 18,
+            child: CircularProgressIndicator(color: _kOrange, strokeWidth: 2)),
+          const SizedBox(width: 10),
+          Text('Analyse de votre projet...',
+            style: TextStyle(fontSize: 13, color: _kMuted)),
+        ])
+      else if (_aiSummary != null)
+        Text(_aiSummary!,
+          style: const TextStyle(fontSize: 13, color: _kText, height: 1.62)),
+      const SizedBox(height: 14),
+      Align(
+        alignment: Alignment.centerRight,
+        child: GestureDetector(
+          onTap: _openChatbot,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: _kOrange,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [BoxShadow(color: _kOrange.withOpacity(0.35), blurRadius: 8, offset: const Offset(0, 3))],
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(LucideIcons.messageCircle, size: 13, color: Colors.white),
+              SizedBox(width: 6),
+              Text('En savoir plus',
+                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+      ),
+    ]),
+  );
 
   // ── Hero ──────────────────────────────────────────────────────────────────
   Widget _buildHero() => Container(
@@ -1603,6 +1737,268 @@ class _SheetButton extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Chatbot ───────────────────────────────────────────────────────────────────
+
+class _ChatMsg {
+  final bool isAi;
+  final String text;
+  const _ChatMsg({required this.isAi, required this.text});
+}
+
+class _ChatbotSheet extends StatefulWidget {
+  final Map<String, dynamic> projet;
+  final String clientNom;
+  const _ChatbotSheet({required this.projet, required this.clientNom});
+
+  @override
+  State<_ChatbotSheet> createState() => _ChatbotSheetState();
+}
+
+class _ChatbotSheetState extends State<_ChatbotSheet> {
+  final _ctrl       = TextEditingController();
+  final _scrollCtrl = ScrollController();
+  bool _sending = false;
+
+  final List<_ChatMsg> _messages = [
+    const _ChatMsg(
+      isAi: true,
+      text: 'Bonjour ! Je suis votre assistant projet.\n'
+            'Posez-moi toutes vos questions sur l\'avancement de vos travaux.',
+    ),
+  ];
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final q = _ctrl.text.trim();
+    if (q.isEmpty || _sending) return;
+    _ctrl.clear();
+    setState(() {
+      _messages.add(_ChatMsg(isAi: false, text: q));
+      _sending = true;
+    });
+    _scrollToBottom();
+    try {
+      final reply = await AiClientService.chatClient(q, widget.projet);
+      if (mounted) setState(() {
+        _messages.add(_ChatMsg(isAi: true, text: reply));
+        _sending = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() {
+        _messages.add(const _ChatMsg(
+            isAi: true, text: 'Désolé, je n\'arrive pas à répondre pour le moment.'));
+        _sending = false;
+      });
+    }
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          _scrollCtrl.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      padding: EdgeInsets.only(bottom: bottom),
+      decoration: const BoxDecoration(
+        color: _kBg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(children: [
+        // Poignée
+        Container(
+          width: 38, height: 4,
+          margin: const EdgeInsets.only(top: 12),
+          decoration: BoxDecoration(
+            color: _kBorder, borderRadius: BorderRadius.circular(4)),
+        ),
+        // En-tête
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+          decoration: const BoxDecoration(
+            color: _kSurface,
+            boxShadow: [BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2))],
+          ),
+          child: Row(children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: _kOrange,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [BoxShadow(color: _kOrange.withOpacity(0.4), blurRadius: 8)],
+              ),
+              child: const Icon(LucideIcons.messageCircle, color: Colors.white, size: 17),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Assistant Projet',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _kText)),
+                Text('Votre conseiller de confiance',
+                  style: TextStyle(fontSize: 11, color: _kMuted)),
+              ]),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(color: _kBg, borderRadius: BorderRadius.circular(8)),
+                child: const Icon(LucideIcons.x, size: 16, color: _kMuted),
+              ),
+            ),
+          ]),
+        ),
+        // Messages
+        Expanded(
+          child: ListView.builder(
+            controller: _scrollCtrl,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            itemCount: _messages.length + (_sending ? 1 : 0),
+            itemBuilder: (_, i) {
+              if (i == _messages.length) return _buildTyping();
+              return _buildBubble(_messages[i]);
+            },
+          ),
+        ),
+        // Saisie
+        Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+          decoration: const BoxDecoration(
+            color: _kSurface,
+            boxShadow: [BoxShadow(color: Color(0x10000000), blurRadius: 8, offset: Offset(0, -2))],
+          ),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                maxLines: 3, minLines: 1,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _send(),
+                style: const TextStyle(fontSize: 13, color: _kText),
+                decoration: InputDecoration(
+                  hintText: 'Posez votre question...',
+                  hintStyle: TextStyle(color: _kMuted.withOpacity(0.6), fontSize: 13),
+                  filled: true,
+                  fillColor: _kBg,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _sending ? null : _send,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 42, height: 42,
+                decoration: BoxDecoration(
+                  color: _sending ? _kMuted : _kOrange,
+                  borderRadius: BorderRadius.circular(21),
+                  boxShadow: _sending
+                      ? []
+                      : [BoxShadow(color: _kOrange.withOpacity(0.4), blurRadius: 8)],
+                ),
+                child: _sending
+                    ? const Center(child: SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
+                    : const Icon(LucideIcons.send, color: Colors.white, size: 16),
+              ),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildBubble(_ChatMsg msg) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(
+      mainAxisAlignment: msg.isAi ? MainAxisAlignment.start : MainAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (msg.isAi) ...[
+          Container(
+            width: 28, height: 28,
+            decoration: BoxDecoration(color: _kOrange, borderRadius: BorderRadius.circular(8)),
+            child: const Icon(LucideIcons.sparkles, size: 13, color: Colors.white),
+          ),
+          const SizedBox(width: 8),
+        ],
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: msg.isAi ? _kSurface : _kOrange,
+              borderRadius: BorderRadius.only(
+                topLeft:     Radius.circular(msg.isAi ? 4 : 14),
+                topRight:    Radius.circular(msg.isAi ? 14 : 4),
+                bottomLeft:  const Radius.circular(14),
+                bottomRight: const Radius.circular(14),
+              ),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05),
+                    blurRadius: 6, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: Text(msg.text,
+              style: TextStyle(
+                fontSize: 13, height: 1.55,
+                color: msg.isAi ? _kText : Colors.white,
+              )),
+          ),
+        ),
+        if (!msg.isAi) const SizedBox(width: 8),
+      ],
+    ),
+  );
+
+  Widget _buildTyping() => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(children: [
+      Container(
+        width: 28, height: 28,
+        decoration: BoxDecoration(color: _kOrange, borderRadius: BorderRadius.circular(8)),
+        child: const Icon(LucideIcons.sparkles, size: 13, color: Colors.white),
+      ),
+      const SizedBox(width: 8),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: _kSurface,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6)],
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(width: 12, height: 12,
+            child: CircularProgressIndicator(color: _kOrange, strokeWidth: 2)),
+          const SizedBox(width: 8),
+          Text('Réflexion...', style: TextStyle(fontSize: 12, color: _kMuted)),
+        ]),
+      ),
+    ]),
+  );
 }
 
 // ── Badge de navigation ───────────────────────────────────────────────────────

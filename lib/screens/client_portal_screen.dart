@@ -111,12 +111,34 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     LucideIcons.userCircle,
   ];
 
+  bool _prefsLoaded = false;
+
   @override
   void initState() {
     super.initState();
     _session = widget.session;
-    _loadPortalData();
+    _initAndLoad();
     _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) => _loadPortalData());
+  }
+
+  Future<void> _initAndLoad() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Migration v2 : l'ancienne version sauvegardait le timestamp à l'ENTRÉE
+    // du tab (bug), ce qui rendait tous les messages "lus" immédiatement.
+    // On efface ces timestamps corrompus une seule fois.
+    final version = prefs.getString('portal_prefs_version_${widget.session.id}');
+    if (version != 'v2') {
+      await prefs.remove('last_msg_read_${widget.session.id}');
+      await prefs.remove('last_doc_read_${widget.session.id}');
+      await prefs.setString('portal_prefs_version_${widget.session.id}', 'v2');
+    } else {
+      final msgTs = prefs.getString('last_msg_read_${widget.session.id}');
+      final docTs = prefs.getString('last_doc_read_${widget.session.id}');
+      if (msgTs != null) _lastMsgRead = DateTime.tryParse(msgTs) ?? _lastMsgRead;
+      if (docTs != null) _lastDocRead = DateTime.tryParse(docTs) ?? _lastDocRead;
+    }
+    _prefsLoaded = true;
+    _loadPortalData();
   }
 
   @override
@@ -126,11 +148,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   }
 
   Future<void> _loadPortalData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final msgTs = prefs.getString('last_msg_read_${widget.session.id}');
-    final docTs = prefs.getString('last_doc_read_${widget.session.id}');
-    _lastMsgRead = msgTs != null ? DateTime.tryParse(msgTs) ?? _lastMsgRead : _lastMsgRead;
-    _lastDocRead = docTs != null ? DateTime.tryParse(docTs) ?? _lastDocRead : _lastDocRead;
+    if (!_prefsLoaded) return; // wait for timestamps to be loaded first
 
     final projetsData = await ClientPortalService
         .getProjetsForClient(_session.clientEmail,
@@ -152,7 +170,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
     final msgsData = <Map<String, dynamic>>[];
     for (final p in projetsData.take(5)) {
       final msgs = await ClientPortalService
-          .getRecentMessages(p['id'].toString(), limit: 5)
+          .getRecentMessages(p['id'].toString(), limit: 30)
           .catchError((_) => <Map<String, dynamic>>[]);
       for (final m in msgs) {
         msgsData.add({ ...m, '_projet_id': p['id'].toString(), '_projet_nom': (p['titre'] as String?) ?? '' });
@@ -171,15 +189,15 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       _projetsRaw = projetsData;
     });
     if (projetsData.isNotEmpty && _aiSummary == null && !_aiSummaryLoading) {
-      _loadAiSummary(projetsData.first);
+      _loadAiSummary(projetsData);
     }
   }
 
-  Future<void> _loadAiSummary(Map<String, dynamic> projet) async {
+  Future<void> _loadAiSummary(List<Map<String, dynamic>> projets) async {
     if (_aiSummaryLoading) return;
     setState(() => _aiSummaryLoading = true);
     try {
-      final summary = await AiClientService.resumeSimple(projet);
+      final summary = await AiClientService.resumeTousLesProjets(projets);
       if (mounted) setState(() { _aiSummary = summary; _aiSummaryLoading = false; });
     } catch (_) {
       if (mounted) setState(() => _aiSummaryLoading = false);
@@ -284,7 +302,8 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       senderName: auteur, senderRole: _roleLabels[role.toLowerCase()] ?? role,
       initials: _initials(auteur), preview: (d['contenu'] as String?) ?? '',
       time: _relativeDate(createdIso),
-      isUnread: createdMs > 0 && createdMs > _lastMsgRead.millisecondsSinceEpoch,
+      isUnread: role.toLowerCase() != 'client' &&
+                createdMs > 0 && createdMs > _lastMsgRead.millisecondsSinceEpoch,
       avatarColor: _avatarColor(auteur),
       projetId: (d['_projet_id'] as String?) ?? '',
       projetNom: (d['_projet_nom'] as String?) ?? '',
@@ -299,27 +318,116 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > 860;
+
+    // Desktop : barre de navigation haute, pas de bottom bar
+    if (isWide) {
+      return Scaffold(
+        backgroundColor: _kNavy,
+        body: _buildDesktop(),
+      );
+    }
+
+    // Mobile : BottomAppBar avec notch + FAB centré
     return Scaffold(
       backgroundColor: _kNavy,
-      body: isWide ? _buildDesktop() : _buildMobile(),
-      floatingActionButton: _projects.isEmpty
-          ? null
-          : FloatingActionButton(
-              onPressed: _openChatbot,
-              backgroundColor: _kOrange,
-              elevation: 4,
-              child: const Icon(LucideIcons.messageCircle, color: Colors.white, size: 22),
+      body: _buildMobile(),
+      bottomNavigationBar: _buildBottomAppBar(),
+      floatingActionButton: _buildChatFab(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+    );
+  }
+
+  // ── FAB chatbot centré avec dégradé ───────────────────────────────────────
+  Widget _buildChatFab() => FloatingActionButton(
+    onPressed: _openChatbot,
+    backgroundColor: Colors.transparent,
+    elevation: 6,
+    shape: const CircleBorder(),
+    child: Container(
+      width: 58, height: 58,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFFFF9F43), Color(0xFFF97316)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(color: Color(0x66F97316), blurRadius: 18, offset: Offset(0, 6)),
+          BoxShadow(color: Color(0x33F97316), blurRadius: 32),
+        ],
+      ),
+      child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(LucideIcons.sparkles, color: Colors.white, size: 20),
+        SizedBox(height: 2),
+        Text('IA', style: TextStyle(color: Colors.white, fontSize: 9,
+            fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+      ]),
+    ),
+  );
+
+  // ── BottomAppBar avec notch ────────────────────────────────────────────────
+  Widget _buildBottomAppBar() => BottomAppBar(
+    shape: const CircularNotchedRectangle(),
+    notchMargin: 8,
+    color: _kNavBar,
+    elevation: 16,
+    padding: EdgeInsets.zero,
+    child: SizedBox(
+      height: 60,
+      child: Row(children: [
+        _navTab(0, LucideIcons.layoutDashboard, 'Accueil'),
+        _navTab(1, LucideIcons.folderOpen, 'Projets'),
+        const Expanded(child: SizedBox()),           // espace pour le FAB
+        _navTab(2, LucideIcons.fileText, 'Docs', badge: _newDocCount),
+        _navTab(3, LucideIcons.messageSquare, 'Messages', badge: _unreadMsgCount),
+      ]),
+    ),
+  );
+
+  Widget _navTab(int index, IconData icon, String label, {int badge = 0}) {
+    final sel = _selectedIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _onTabSelected(index),
+        behavior: HitTestBehavior.opaque,
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Stack(clipBehavior: Clip.none, children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              width: 40, height: 28,
+              decoration: BoxDecoration(
+                color: sel ? _kOrange.withOpacity(0.15) : Colors.transparent,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(icon, size: 18,
+                  color: sel ? _kOrange : Colors.white.withOpacity(0.35)),
             ),
+            if (badge > 0)
+              Positioned(top: -5, right: -5, child: _NavBadge(count: badge)),
+          ]),
+          const SizedBox(height: 3),
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+              color: sel ? _kOrange : Colors.white.withOpacity(0.35),
+            ),
+            child: Text(label),
+          ),
+        ]),
+      ),
     );
   }
 
   void _openChatbot() {
-    final projet = _projetsRaw.isNotEmpty ? _projetsRaw.first : <String, dynamic>{};
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ChatbotSheet(projet: projet, clientNom: _session.clientNom),
+      builder: (_) => _ChatbotSheet(projets: _projetsRaw, clientNom: _session.clientNom),
     );
   }
 
@@ -381,7 +489,6 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   Widget _buildMobile() => Column(children: [
     _buildMobileHeader(),
     Expanded(child: _buildContent(isWide: false)),
-    _buildBottomNav(),
   ]);
 
   Widget _buildContent({required bool isWide}) {
@@ -502,6 +609,25 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Icon(LucideIcons.bell, color: Colors.white, size: 16),
+        ),
+      ),
+      const SizedBox(width: 8),
+      GestureDetector(
+        onTap: () => _onTabSelected(4),
+        child: Container(
+          width: 34, height: 34,
+          decoration: BoxDecoration(
+            color: _selectedIndex == 4 ? _kOrange : _kOrange.withOpacity(0.18),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _kOrange.withOpacity(0.35)),
+          ),
+          child: Center(
+            child: Text(
+              _initials(_session.clientNom),
+              style: const TextStyle(color: Colors.white, fontSize: 12,
+                  fontWeight: FontWeight.w800),
+            ),
+          ),
         ),
       ),
     ]),
@@ -1112,10 +1238,10 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
 
   // ── Messages ──────────────────────────────────────────────────────────────
   Widget _buildMessagesTab() {
-    final newMessages = _messages.where((m) => m.isUnread).toList();
+    final unread = _messages.where((m) => m.isUnread).toList();
     return Column(children: [
       _tabHeader(
-        'Messages',
+        'Messages non lus',
         _unreadMsgCount > 0
             ? '$_unreadMsgCount non lu${_unreadMsgCount > 1 ? 's' : ''}'
             : 'Aucun nouveau message',
@@ -1124,12 +1250,12 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
       _tabSheetContent(
         _loading
             ? _loadingWidget()
-            : newMessages.isEmpty
-                ? _emptyState('Aucun nouveau message', LucideIcons.messageSquare)
+            : unread.isEmpty
+                ? _emptyState('Aucun message non lu', LucideIcons.messageSquare)
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(18, 24, 18, 32),
-                    itemCount: newMessages.length,
-                    itemBuilder: (_, i) => _buildMessageTile(newMessages[i])),
+                    itemCount: unread.length,
+                    itemBuilder: (_, i) => _buildMessageTile(unread[i])),
       ),
     ]);
   }
@@ -1264,7 +1390,7 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(color: _kOrange,
                     borderRadius: BorderRadius.circular(8)),
-                child: const Text('NOUVEAU', style: TextStyle(color: Colors.white,
+                child: const Text('NON LU', style: TextStyle(color: Colors.white,
                     fontSize: 8, fontWeight: FontWeight.w800)),
               )
             else
@@ -1478,14 +1604,18 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   }
 
   Future<void> _onTabSelected(int index) async {
+    final prev = _selectedIndex;
+    if (index == prev) return;
     setState(() => _selectedIndex = index);
+    // Mark as read when LEAVING the tab so unread badges stay visible while inside
     final now   = DateTime.now();
     final prefs = await SharedPreferences.getInstance();
-    // Save timestamp for next session without resetting isNew/isUnread in current session
-    if (index == 3) {
+    if (prev == 3) {
       await prefs.setString('last_msg_read_${_session.id}', now.toIso8601String());
-    } else if (index == 2) {
+      if (mounted) setState(() => _lastMsgRead = now);
+    } else if (prev == 2) {
       await prefs.setString('last_doc_read_${_session.id}', now.toIso8601String());
+      if (mounted) setState(() => _lastDocRead = now);
     }
   }
 
@@ -1748,9 +1878,9 @@ class _ChatMsg {
 }
 
 class _ChatbotSheet extends StatefulWidget {
-  final Map<String, dynamic> projet;
+  final List<Map<String, dynamic>> projets;
   final String clientNom;
-  const _ChatbotSheet({required this.projet, required this.clientNom});
+  const _ChatbotSheet({required this.projets, required this.clientNom});
 
   @override
   State<_ChatbotSheet> createState() => _ChatbotSheetState();
@@ -1786,7 +1916,7 @@ class _ChatbotSheetState extends State<_ChatbotSheet> {
     });
     _scrollToBottom();
     try {
-      final reply = await AiClientService.chatClient(q, widget.projet);
+      final reply = await AiClientService.chatClient(q, widget.projets);
       if (mounted) setState(() {
         _messages.add(_ChatMsg(isAi: true, text: reply));
         _sending = false;

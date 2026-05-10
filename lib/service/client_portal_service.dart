@@ -347,7 +347,7 @@ class ClientPortalService {
           .from('commentaires')
           .select()
           .eq('projet_id', projetId)
-          .order('created_at', ascending: true)
+          .order('created_at', ascending: false)
           .limit(limit);
       return (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
     } catch (_) {

@@ -536,8 +536,21 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                 border: sel ? Border.all(color: _kOrange.withOpacity(0.3)) : null,
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(_navIcons[i], size: 14,
-                    color: sel ? _kOrange : Colors.white.withOpacity(0.5)),
+                i == 4
+                    ? Container(
+                        width: 16, height: 16,
+                        decoration: BoxDecoration(
+                          color: sel ? _kOrange : Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Center(child: Text(
+                          _initials(_session.clientNom),
+                          style: const TextStyle(color: Colors.white, fontSize: 6,
+                              fontWeight: FontWeight.w800),
+                        )),
+                      )
+                    : Icon(_navIcons[i], size: 14,
+                        color: sel ? _kOrange : Colors.white.withOpacity(0.5)),
                 const SizedBox(width: 6),
                 Text(_navLabelsDesktop[i], style: TextStyle(fontSize: 13,
                     fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
@@ -617,17 +630,10 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
         child: Container(
           width: 34, height: 34,
           decoration: BoxDecoration(
-            color: _selectedIndex == 4 ? _kOrange : _kOrange.withOpacity(0.18),
+            color: Colors.white.withOpacity(0.1),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _kOrange.withOpacity(0.35)),
           ),
-          child: Center(
-            child: Text(
-              _initials(_session.clientNom),
-              style: const TextStyle(color: Colors.white, fontSize: 12,
-                  fontWeight: FontWeight.w800),
-            ),
-          ),
+          child: const Icon(LucideIcons.userCircle, color: Colors.white, size: 16),
         ),
       ),
     ]),
@@ -661,8 +667,25 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                     color: sel ? _kOrange.withOpacity(0.15) : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Icon(_navIcons[i], size: 20,
-                      color: sel ? _kOrange : Colors.white.withOpacity(0.30)),
+                  child: i == 4
+                      ? Center(child: Container(
+                          width: 24, height: 24,
+                          decoration: BoxDecoration(
+                            color: sel ? _kOrange : Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                              color: sel ? Colors.transparent : Colors.white.withOpacity(0.25),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Center(child: Text(
+                            _initials(_session.clientNom),
+                            style: const TextStyle(color: Colors.white, fontSize: 9,
+                                fontWeight: FontWeight.w800),
+                          )),
+                        ))
+                      : Icon(_navIcons[i], size: 20,
+                          color: sel ? _kOrange : Colors.white.withOpacity(0.30)),
                 ),
                 if (badge > 0)
                   Positioned(
@@ -836,20 +859,6 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
                   style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800,
                       color: Colors.white, letterSpacing: -0.6, height: 1.1),
                   maxLines: 1, overflow: TextOverflow.ellipsis),
-            ]),
-            const SizedBox(height: 24),
-            Row(children: [
-              _heroChip('${_projects.length}', 'Projets',
-                  LucideIcons.folderOpen, _kOrange, () => _onTabSelected(1)),
-              const SizedBox(width: 10),
-              _heroChip('${_documents.length}', 'Documents',
-                  LucideIcons.fileText, const Color(0xFF60A5FA), () => _onTabSelected(2)),
-              const SizedBox(width: 10),
-              _heroChip(
-                _unreadMsgCount > 0 ? '$_unreadMsgCount' : '${_messages.length}',
-                _unreadMsgCount > 0 ? 'Non lus' : 'Messages',
-                LucideIcons.messageSquare, const Color(0xFFA78BFA), () => _onTabSelected(3),
-              ),
             ]),
           ]),
         ),
@@ -1947,10 +1956,10 @@ class _ChatbotSheetState extends State<_ChatbotSheet> {
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
+      height: MediaQuery.of(context).size.height * 0.82,
       padding: EdgeInsets.only(bottom: bottom),
       decoration: const BoxDecoration(
-        color: _kBg,
+        color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Column(children: [
@@ -1959,49 +1968,65 @@ class _ChatbotSheetState extends State<_ChatbotSheet> {
           width: 38, height: 4,
           margin: const EdgeInsets.only(top: 12),
           decoration: BoxDecoration(
-            color: _kBorder, borderRadius: BorderRadius.circular(4)),
+            color: _kBorder,
+            borderRadius: BorderRadius.circular(4)),
         ),
         // En-tête
-        Container(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-          decoration: const BoxDecoration(
-            color: _kSurface,
-            boxShadow: [BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2))],
-          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
           child: Row(children: [
             Container(
-              width: 36, height: 36,
+              width: 42, height: 42,
               decoration: BoxDecoration(
-                color: _kOrange,
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [BoxShadow(color: _kOrange.withOpacity(0.4), blurRadius: 8)],
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF9F43), Color(0xFFF97316)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(13),
+                boxShadow: [BoxShadow(
+                    color: _kOrange.withOpacity(0.45),
+                    blurRadius: 14, offset: const Offset(0, 4))],
               ),
-              child: const Icon(LucideIcons.messageCircle, color: Colors.white, size: 17),
+              child: const Icon(LucideIcons.sparkles, color: Colors.white, size: 20),
             ),
-            const SizedBox(width: 10),
-            const Expanded(
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Assistant Projet',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _kText)),
-                Text('Votre conseiller de confiance',
-                  style: TextStyle(fontSize: 11, color: _kMuted)),
+                const Text('Assistant IA',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800,
+                      color: _kText, letterSpacing: -0.3)),
+                Row(children: [
+                  Container(
+                    width: 7, height: 7,
+                    decoration: const BoxDecoration(
+                        color: Color(0xFF10B981), shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 5),
+                  Text('En ligne',
+                      style: TextStyle(fontSize: 11, color: _kMuted)),
+                ]),
               ]),
             ),
             GestureDetector(
               onTap: () => Navigator.pop(context),
               child: Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(color: _kBg, borderRadius: BorderRadius.circular(8)),
+                width: 34, height: 34,
+                decoration: BoxDecoration(
+                  color: _kBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 child: const Icon(LucideIcons.x, size: 16, color: _kMuted),
               ),
             ),
           ]),
         ),
+        const Divider(height: 1, color: _kBorder),
         // Messages
         Expanded(
           child: ListView.builder(
             controller: _scrollCtrl,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
             itemCount: _messages.length + (_sending ? 1 : 0),
             itemBuilder: (_, i) {
               if (i == _messages.length) return _buildTyping();
@@ -2011,10 +2036,10 @@ class _ChatbotSheetState extends State<_ChatbotSheet> {
         ),
         // Saisie
         Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
-          decoration: const BoxDecoration(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+          decoration: BoxDecoration(
             color: _kSurface,
-            boxShadow: [BoxShadow(color: Color(0x10000000), blurRadius: 8, offset: Offset(0, -2))],
+            border: const Border(top: BorderSide(color: _kBorder)),
           ),
           child: Row(children: [
             Expanded(
@@ -2023,15 +2048,16 @@ class _ChatbotSheetState extends State<_ChatbotSheet> {
                 maxLines: 3, minLines: 1,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => _send(),
-                style: const TextStyle(fontSize: 13, color: _kText),
+                style: const TextStyle(fontSize: 14, color: _kText),
                 decoration: InputDecoration(
                   hintText: 'Posez votre question...',
-                  hintStyle: TextStyle(color: _kMuted.withOpacity(0.6), fontSize: 13),
+                  hintStyle: TextStyle(color: _kMuted.withOpacity(0.6), fontSize: 14),
                   filled: true,
                   fillColor: _kBg,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(22),
                     borderSide: BorderSide.none,
                   ),
                 ),
@@ -2042,18 +2068,28 @@ class _ChatbotSheetState extends State<_ChatbotSheet> {
               onTap: _sending ? null : _send,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                width: 42, height: 42,
+                width: 44, height: 44,
                 decoration: BoxDecoration(
-                  color: _sending ? _kMuted : _kOrange,
-                  borderRadius: BorderRadius.circular(21),
+                  gradient: _sending
+                      ? null
+                      : const LinearGradient(
+                          colors: [Color(0xFFFF9F43), Color(0xFFF97316)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                  color: _sending ? Colors.white.withOpacity(0.1) : null,
+                  shape: BoxShape.circle,
                   boxShadow: _sending
                       ? []
-                      : [BoxShadow(color: _kOrange.withOpacity(0.4), blurRadius: 8)],
+                      : [BoxShadow(
+                          color: _kOrange.withOpacity(0.45),
+                          blurRadius: 12, offset: const Offset(0, 4))],
                 ),
                 child: _sending
                     ? const Center(child: SizedBox(width: 18, height: 18,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-                    : const Icon(LucideIcons.send, color: Colors.white, size: 16),
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2)))
+                    : const Icon(LucideIcons.send, color: Colors.white, size: 17),
               ),
             ),
           ]),
@@ -2063,40 +2099,56 @@ class _ChatbotSheetState extends State<_ChatbotSheet> {
   }
 
   Widget _buildBubble(_ChatMsg msg) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.only(bottom: 14),
     child: Row(
       mainAxisAlignment: msg.isAi ? MainAxisAlignment.start : MainAxisAlignment.end,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         if (msg.isAi) ...[
           Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(color: _kOrange, borderRadius: BorderRadius.circular(8)),
+            width: 30, height: 30,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFF9F43), Color(0xFFF97316)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(9),
+            ),
             child: const Icon(LucideIcons.sparkles, size: 13, color: Colors.white),
           ),
           const SizedBox(width: 8),
         ],
         Flexible(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
             decoration: BoxDecoration(
-              color: msg.isAi ? _kSurface : _kOrange,
+              color: msg.isAi ? _kSurface : null,
+              gradient: msg.isAi
+                  ? null
+                  : const LinearGradient(
+                      colors: [Color(0xFFFF9F43), Color(0xFFF97316)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
               borderRadius: BorderRadius.only(
-                topLeft:     Radius.circular(msg.isAi ? 4 : 14),
-                topRight:    Radius.circular(msg.isAi ? 14 : 4),
-                bottomLeft:  const Radius.circular(14),
-                bottomRight: const Radius.circular(14),
+                topLeft:     Radius.circular(msg.isAi ? 4 : 16),
+                topRight:    Radius.circular(msg.isAi ? 16 : 4),
+                bottomLeft:  const Radius.circular(16),
+                bottomRight: const Radius.circular(16),
               ),
+              border: msg.isAi
+                  ? Border.all(color: _kBorder)
+                  : null,
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05),
-                    blurRadius: 6, offset: const Offset(0, 2)),
+                BoxShadow(color: Colors.black.withOpacity(0.18),
+                    blurRadius: 8, offset: const Offset(0, 3)),
               ],
             ),
             child: Text(msg.text,
               style: TextStyle(
-                fontSize: 13, height: 1.55,
-                color: msg.isAi ? _kText : Colors.white,
-              )),
+                  fontSize: 14, height: 1.55,
+                  color: msg.isAi ? _kText : Colors.white)),
           ),
         ),
         if (!msg.isAi) const SizedBox(width: 8),
@@ -2105,26 +2157,36 @@ class _ChatbotSheetState extends State<_ChatbotSheet> {
   );
 
   Widget _buildTyping() => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.only(bottom: 14),
     child: Row(children: [
       Container(
-        width: 28, height: 28,
-        decoration: BoxDecoration(color: _kOrange, borderRadius: BorderRadius.circular(8)),
+        width: 30, height: 30,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFF9F43), Color(0xFFF97316)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(9),
+        ),
         child: const Icon(LucideIcons.sparkles, size: 13, color: Colors.white),
       ),
       const SizedBox(width: 8),
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: _kSurface,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6)],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _kBorder),
+          boxShadow: [BoxShadow(
+              color: Colors.black.withOpacity(0.18), blurRadius: 8)],
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(width: 12, height: 12,
+          const SizedBox(width: 14, height: 14,
             child: CircularProgressIndicator(color: _kOrange, strokeWidth: 2)),
-          const SizedBox(width: 8),
-          Text('Réflexion...', style: TextStyle(fontSize: 12, color: _kMuted)),
+          const SizedBox(width: 9),
+          Text('En train de réfléchir...',
+            style: TextStyle(fontSize: 12, color: _kMuted)),
         ]),
       ),
     ]),

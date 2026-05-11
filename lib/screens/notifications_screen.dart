@@ -267,11 +267,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       Container(
         width: 38, height: 38,
         decoration: BoxDecoration(
-          color: _kOrange.withOpacity(0.15),
+          color: Colors.white.withOpacity(0.1),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _kOrange.withOpacity(0.3)),
         ),
-        child: const Icon(LucideIcons.bell, color: _kOrange, size: 17),
+        child: const Icon(LucideIcons.bell, color: Colors.white, size: 17),
+      ),
+      const SizedBox(width: 8),
+      Container(
+        width: 38, height: 38,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Icon(LucideIcons.userCircle, color: Colors.white, size: 17),
       ),
     ]),
   );

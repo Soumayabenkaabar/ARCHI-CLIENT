@@ -192,6 +192,15 @@ CREATE TABLE public.project_members (
   CONSTRAINT project_members_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projets(id),
   CONSTRAINT project_members_membre_id_fkey FOREIGN KEY (membre_id) REFERENCES public.membres(id)
 );
+CREATE TABLE public.project_models (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL,
+  url text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  mesh_names ARRAY DEFAULT '{}'::text[],
+  CONSTRAINT project_models_pkey PRIMARY KEY (id),
+  CONSTRAINT project_models_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projets(id)
+);
 CREATE TABLE public.projets (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   client_id uuid,
@@ -216,6 +225,16 @@ CREATE TABLE public.projets (
   longitude double precision,
   CONSTRAINT projets_pkey PRIMARY KEY (id),
   CONSTRAINT projets_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.clients(id)
+);
+CREATE TABLE public.tache_historique (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  tache_id text NOT NULL,
+  projet_id text NOT NULL,
+  evenement text NOT NULL,
+  statut_avant text,
+  statut_apres text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT tache_historique_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.taches (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

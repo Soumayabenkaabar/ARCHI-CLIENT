@@ -48,6 +48,12 @@ class _Commentaire {
   });
 }
 
+class _Model3D {
+  final String id, url;
+  final List<String> meshNames;
+  const _Model3D({required this.id, required this.url, required this.meshNames});
+}
+
 // ── Écran principal ───────────────────────────────────────────────────────────
 class ClientProjectDetailScreen extends StatefulWidget {
   final String projetId;
@@ -78,10 +84,18 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
   List<_Commentaire> _commentaires  = [];
 
   // Loading states
-  bool _loadingActualites  = true;
-  bool _loadingPhotos      = true;
-  bool _loadingDocuments   = true;
+  bool _loadingActualites   = true;
+  bool _loadingPhotos       = true;
+  bool _loadingDocuments    = true;
   bool _loadingCommentaires = true;
+  bool _loadingModels       = true;
+
+  // Modèles 3D
+  List<_Model3D>      _models           = [];
+  int                 _selectedModelIdx = 0;
+  WebViewController?  _model3DCtrl;
+  bool                _model3DLoading   = false;
+  bool                _model3DError     = false;
 
   // Commentaire input
   final _commentCtrl = TextEditingController();
@@ -97,6 +111,7 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
       if (!_tabController.indexIsChanging) setState(() {});
     });
     _loadAll();
+    _loadModels();
     _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) => _loadAll());
   }
 
@@ -256,6 +271,123 @@ class _ClientProjectDetailScreenState extends State<ClientProjectDetailScreen>
       if (!mounted) return;
       setState(() => _loadingCommentaires = false);
     }
+  }
+
+  Future<void> _loadModels() async {
+    try {
+      final data = await ClientPortalService.getProjectModels(widget.projetId);
+      if (!mounted) return;
+      final models = data.map((d) => _Model3D(
+        id:        d['id']?.toString() ?? '',
+        url:       (d['url'] as String?) ?? '',
+        meshNames: (d['mesh_names'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      )).where((m) => m.url.isNotEmpty).toList();
+      setState(() { _models = models; _loadingModels = false; });
+      if (models.isNotEmpty) _initModelViewer(models.first.url);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingModels = false);
+    }
+  }
+
+  void _initModelViewer(String url) {
+    final ctrl = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageStarted:    (_) => setState(() { _model3DLoading = true;  _model3DError = false; }),
+        onPageFinished:   (_) => setState(() => _model3DLoading = false),
+        onWebResourceError: (_) => setState(() { _model3DLoading = false; _model3DError = true; }),
+      ));
+    final ext = url.split('?').first.split('.').last.toLowerCase();
+    if (['glb', 'gltf', 'obj'].contains(ext)) {
+      ctrl.loadHtmlString(_build3DViewerHtml(url), baseUrl: 'https://ngcnfbbeefsbynknvogm.supabase.co');
+    } else {
+      ctrl.loadRequest(Uri.parse(url));
+    }
+    setState(() { _model3DCtrl = ctrl; _model3DLoading = true; _model3DError = false; });
+  }
+
+  String _build3DViewerHtml(String modelUrl) {
+    final encodedUrl = Uri.encodeFull(modelUrl);
+    return '''<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0F172A;overflow:hidden;width:100vw;height:100vh;touch-action:none}
+  canvas{display:block;touch-action:none;-webkit-user-select:none;user-select:none}
+  #msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+       color:#FF8C00;font-family:-apple-system,sans-serif;font-size:13px;
+       text-align:center;pointer-events:none}
+  #hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+        background:rgba(0,0,0,.55);border:1px solid rgba(255,140,0,.35);
+        color:#FF8C00;font-size:11px;padding:7px 16px;border-radius:20px;
+        font-family:-apple-system,sans-serif;display:none;white-space:nowrap}
+</style>
+</head><body>
+<div id="msg">⟳ Chargement du modèle 3D...</div>
+<div id="hint">👆 1 doigt = rotation &nbsp;·&nbsp; 🤏 2 doigts = zoom</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/loaders/OBJLoader.js"></script>
+<script>
+var scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0F172A);
+var cam=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.001,100000);
+var renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+document.body.appendChild(renderer.domElement);
+
+/* ── Touch-action explicite sur le canvas pour mobile ── */
+renderer.domElement.style.touchAction="none";
+
+var controls=new THREE.OrbitControls(cam,renderer.domElement);
+controls.enableDamping=true;
+controls.dampingFactor=0.12;   /* plus réactif */
+controls.rotateSpeed=1.8;      /* rotation plus fluide au doigt */
+controls.zoomSpeed=1.4;
+controls.panSpeed=1.0;
+controls.screenSpacePanning=true;
+controls.enablePan=true;
+scene.add(new THREE.AmbientLight(0xffffff,0.7));
+var dl=new THREE.DirectionalLight(0xffffff,0.8);dl.position.set(10,20,10);scene.add(dl);
+scene.add(new THREE.HemisphereLight(0x88aacc,0x222222,0.3));
+
+function fit(obj){
+  var box=new THREE.Box3().setFromObject(obj);
+  var c=box.getCenter(new THREE.Vector3());
+  var s=box.getSize(new THREE.Vector3());
+  var m=Math.max(s.x,s.y,s.z)||1;
+  obj.position.sub(c);
+  cam.position.set(m*1.6,m*1.2,m*1.6);
+  cam.near=m*0.001;cam.far=m*200;cam.updateProjectionMatrix();
+  controls.target.set(0,0,0);controls.update();
+  document.getElementById("msg").style.display="none";
+  document.getElementById("hint").style.display="block";
+  setTimeout(function(){document.getElementById("hint").style.display="none";},3000);
+}
+function onErr(e){
+  document.getElementById("msg").innerHTML="✕ Impossible de charger le modèle";
+  document.getElementById("msg").style.color="#EF4444";
+  console.error(e);
+}
+var url="$encodedUrl";
+var ext=url.split("?")[0].split(".").pop().toLowerCase();
+if(ext==="glb"||ext==="gltf"){
+  new THREE.GLTFLoader().load(url,function(g){scene.add(g.scene);fit(g.scene);},null,onErr);
+}else if(ext==="obj"){
+  new THREE.OBJLoader().load(url,function(o){scene.add(o);fit(o);},null,onErr);
+}else{onErr("Format non supporté: "+ext);}
+window.addEventListener("resize",function(){
+  cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+(function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,cam);})();
+</script></body></html>''';
   }
 
   Future<void> _pickFile() async {
@@ -1055,107 +1187,170 @@ Widget _buildFileAttachment(String url, String nom) {
 
   // ── TAB 4 : Modèle 3D ────────────────────────────────────────────────────
   Widget _buildModele3DTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _sectionTitle('Modèle 3D du projet', LucideIcons.box),
-        const SizedBox(height: 12),
-        // Placeholder viewer 3D
-        Container(
-          height: 260,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 16, offset: const Offset(0, 4))],
-          ),
-          child: Stack(children: [
-            // Grille décorative
-            CustomPaint(painter: _GridPainter(), size: Size.infinite),
-            // Contenu centre
-            Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(
-                width: 64, height: 64,
-                decoration: BoxDecoration(
-                  color: _kAccentOrange.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: _kAccentOrange.withOpacity(0.3)),
-                ),
-                child: const Icon(LucideIcons.box, size: 30, color: _kAccentOrange),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Viewer 3D / BIM',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.3),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Intégrez votre viewer IFC ou 3D ici\n(Speckle, Autodesk Forge, etc.)',
-                style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12, height: 1.6),
-                textAlign: TextAlign.center,
-              ),
-            ])),
-            // Badge coin
-            Positioned(
-              top: 14, right: 14,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: _kAccentOrange.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _kAccentOrange.withOpacity(0.3)),
-                ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(LucideIcons.zap, size: 11, color: _kAccentOrange),
-                  SizedBox(width: 4),
-                  Text('BIM Ready', style: TextStyle(fontSize: 10, color: _kAccentOrange, fontWeight: FontWeight.w700)),
-                ]),
-              ),
-            ),
-          ]),
-        ),
-        const SizedBox(height: 16),
-        // Info cards
-        Row(children: [
-          Expanded(child: _buildInfo3DCard(LucideIcons.layers, 'Format', 'IFC / RVT / OBJ', _kBlue)),
-          const SizedBox(width: 10),
-          Expanded(child: _buildInfo3DCard(LucideIcons.rotate3d, 'Navigation', '3D interactive', _kGreen)),
-        ]),
-        const SizedBox(height: 10),
-        Row(children: [
-          Expanded(child: _buildInfo3DCard(LucideIcons.eye, 'Phases', 'Toutes les phases', _kAccentOrange)),
-          const SizedBox(width: 10),
-          Expanded(child: _buildInfo3DCard(LucideIcons.download, 'Export', 'PDF / DWG', _kTextSecondary)),
-        ]),
-        const SizedBox(height: 24),
-      ]),
-    );
-  }
+    // Chargement
+    if (_loadingModels) {
+      return const Center(child: CircularProgressIndicator(color: _kAccentOrange, strokeWidth: 2));
+    }
 
-  Widget _buildInfo3DCard(IconData icon, String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _kSurface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      child: Row(children: [
-        Container(
-          width: 34, height: 34,
-          decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-          child: Icon(icon, size: 15, color: color),
-        ),
-        const SizedBox(width: 10),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(fontSize: 10, color: _kTextSecondary)),
-          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _kDark)),
+    // Aucun modèle → placeholder
+    if (_models.isEmpty) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _sectionTitle('Modèle 3D du projet', LucideIcons.box),
+          const SizedBox(height: 12),
+          Container(
+            height: 240,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Stack(children: [
+              CustomPaint(painter: _GridPainter(), size: Size.infinite),
+              Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 60, height: 60,
+                  decoration: BoxDecoration(
+                    color: _kAccentOrange.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _kAccentOrange.withOpacity(0.3)),
+                  ),
+                  child: const Icon(LucideIcons.box, size: 26, color: _kAccentOrange),
+                ),
+                const SizedBox(height: 12),
+                const Text('Aucun modèle 3D disponible',
+                    style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Text('L\'architecte n\'a pas encore\npartagé de modèle 3D.',
+                    style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12, height: 1.5),
+                    textAlign: TextAlign.center),
+              ])),
+            ]),
+          ),
         ]),
-      ]),
-    );
+      );
+    }
+
+    final model = _models[_selectedModelIdx];
+
+    return Column(children: [
+
+      // ── Sélecteur si plusieurs modèles ────────────────────────────────
+      if (_models.length > 1)
+        Container(
+          height: 48,
+          color: _kNavy,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            itemCount: _models.length,
+            itemBuilder: (_, i) {
+              final selected = i == _selectedModelIdx;
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _selectedModelIdx = i);
+                  _initModelViewer(_models[i].url);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: selected ? _kAccentOrange : Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Center(
+                    child: Text(
+                      'Modèle ${i + 1}',
+                      style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700,
+                        color: selected ? Colors.white : Colors.white54,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+
+      // ── Viewer 3D (WebView) ───────────────────────────────────────────
+      Expanded(
+        child: Stack(children: [
+          if (_model3DCtrl != null)
+            WebViewWidget(controller: _model3DCtrl!),
+          // Spinner pendant le chargement
+          if (_model3DLoading)
+            Container(
+              color: const Color(0xFF0F172A),
+              child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const CircularProgressIndicator(color: _kAccentOrange, strokeWidth: 2),
+                const SizedBox(height: 12),
+                Text('Chargement du modèle 3D...',
+                    style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+              ])),
+            ),
+          // Erreur
+          if (_model3DError)
+            Container(
+              color: const Color(0xFF0F172A),
+              child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 56, height: 56,
+                  decoration: BoxDecoration(
+                    color: _kRed.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(LucideIcons.alertTriangle, size: 26, color: _kRed),
+                ),
+                const SizedBox(height: 12),
+                const Text('Impossible de charger le modèle',
+                    style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 16),
+                GestureDetector(
+                  onTap: () => _initModelViewer(model.url),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _kAccentOrange,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text('Réessayer',
+                        style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ])),
+            ),
+        ]),
+      ),
+
+      // ── Mesh names ────────────────────────────────────────────────────
+      if (model.meshNames.isNotEmpty)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: _kNavy,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              const Icon(LucideIcons.layers, size: 12, color: Colors.white38),
+              const SizedBox(width: 6),
+              ...model.meshNames.map((name) => Container(
+                margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(name,
+                    style: const TextStyle(fontSize: 10, color: Colors.white54, fontWeight: FontWeight.w500)),
+              )),
+            ]),
+          ),
+        ),
+    ]);
   }
 
   // ── Widgets utilitaires ───────────────────────────────────────────────────

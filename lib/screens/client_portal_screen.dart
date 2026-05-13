@@ -1678,10 +1678,11 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
     }
     setState(() { _loading = true; _error = null; });
     try {
-      await Supabase.instance.client
-          .from('client_portal_access')
-          .update({'password_raw': newPass, 'password_changed': true})
-          .eq('id', widget.session.id);
+      // RPC SECURITY DEFINER — contourne le RLS sur password_raw
+      await Supabase.instance.client.rpc('update_client_password', params: {
+        'p_access_id': widget.session.id,
+        'p_password':  newPass,
+      });
 
       final updated = ClientSession(
         id: widget.session.id,

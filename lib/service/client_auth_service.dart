@@ -51,14 +51,12 @@ class ClientAuthService {
     final trimEmail    = email.trim().toLowerCase();
     final trimPassword = password.trim();
 
-    // 1. Récupère tous les accès (sans limit — plusieurs lignes possibles)
+    // 1. Récupère tous les accès via RPC SECURITY DEFINER (contourne le RLS
+    //    qui masquerait password_raw pour les utilisateurs anonymes)
     final List<dynamic> rows;
     try {
       rows = await _supa
-          .from('client_portal_access')
-          .select('id, projet_id, client_nom, client_email, actif, password_changed, password_raw, telephone')
-          .eq('client_email', trimEmail)
-          .order('created_at', ascending: false);
+          .rpc('get_client_login_rows', params: {'p_email': trimEmail});
     } catch (e) {
       throw Exception('Erreur de connexion. Vérifiez votre connexion internet.');
     }
@@ -67,37 +65,37 @@ class ClientAuthService {
       throw Exception('Aucun compte trouvé pour cet email.');
     }
 
-    // 2. Utilise la ligne d'authentification : celle qui a un mot de passe.
-    //    Les lignes "lien uniquement" (créées automatiquement pour les projets
-    //    supplémentaires) ont password_raw vide et ne servent pas à l'auth.
+    // 2. Cherche une ligne avec password_raw défini (connexions après 1er changement)
     final authCandidates = rows.where((r) =>
         ((r['password_raw'] as String?) ?? '').isNotEmpty).toList();
 
-    if (authCandidates.isEmpty) {
-      // Aucune ligne avec mot de passe → compte non configuré
-      final anyActif = rows.any((r) => (r['actif'] as bool?) ?? false);
-      if (!anyActif) {
-        throw Exception('Votre compte est désactivé. Contactez votre architecte.');
-      }
-      throw Exception('Mot de passe non configuré. Demandez à votre architecte de réinitialiser votre accès.');
-    }
-
-    final row    = Map<String, dynamic>.from(authCandidates.first as Map);
-    final actif  = row['actif'] as bool? ?? false;
-    final stored = (row['password_raw'] as String?) ?? '';
-
-    if (!actif) {
+    // Ligne active à utiliser pour la session (avec ou sans password_raw)
+    final activeRows = rows.where((r) => (r['actif'] as bool?) ?? false).toList();
+    if (activeRows.isEmpty) {
       throw Exception('Votre compte est désactivé. Contactez votre architecte.');
     }
 
-    // 3a. Vérification directe password_raw
-    bool authenticated = stored == trimPassword;
+    late Map<String, dynamic> row;
+    bool authenticated = false;
 
-    // 3b. Fallback Supabase Auth
+    if (authCandidates.isNotEmpty) {
+      // Cas normal : password_raw présent → vérification directe
+      row = Map<String, dynamic>.from(authCandidates.first as Map);
+      final stored = (row['password_raw'] as String?) ?? '';
+      authenticated = stored == trimPassword;
+    }
+
+    // Fallback Supabase Auth : première connexion (password_raw non encore défini)
+    // ou si la vérification directe a échoué
     if (!authenticated) {
       try {
         await _supa.auth.signInWithPassword(email: trimEmail, password: trimPassword);
         authenticated = true;
+        // Utilise la première ligne active (password_raw sera défini après changement)
+        if (authCandidates.isEmpty) {
+          row = Map<String, dynamic>.from(activeRows.first as Map);
+          row['password_changed'] = false; // Force l'écran de changement de mot de passe
+        }
       } catch (_) {}
     }
 

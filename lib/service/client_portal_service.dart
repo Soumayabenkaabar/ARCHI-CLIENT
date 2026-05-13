@@ -56,50 +56,14 @@ class ClientPortalService {
     final trimEmail = clientEmail.trim().toLowerCase();
     final password  = _generatePassword();
 
-    // Vérifie si un accès existe déjà pour cet email sur ce projet
-    final existing = await _supa
-        .from('client_portal_access')
-        .select('id')
-        .eq('client_email', trimEmail)
-        .eq('projet_id', projetId)
-        .limit(1);
-
-    late ClientAccess access;
-
-    if (existing.isNotEmpty) {
-      // Réactive et réinitialise le mot de passe
-      await _supa
-          .from('client_portal_access')
-          .update({
-            'actif':            true,
-            'password_raw':     password,
-            'password_changed': false,
-          })
-          .eq('id', existing.first['id']);
-
-      final row = await _supa
-          .from('client_portal_access')
-          .select()
-          .eq('id', existing.first['id'])
-          .single();
-
-      access = ClientAccess.fromJson(row);
-    } else {
-      final row = await _supa
-          .from('client_portal_access')
-          .insert({
-            'projet_id':        projetId,
-            'client_nom':       clientNom,
-            'client_email':     trimEmail,
-            'password_hash':    '',
-            'password_raw':     password,
-            'password_changed': false,
-          })
-          .select()
-          .single();
-
-      access = ClientAccess.fromJson(row);
-    }
+    // Upsert via RPC SECURITY DEFINER pour contourner le RLS sur password_raw
+    final rows = await _supa.rpc('upsert_client_access', params: {
+      'p_projet_id':    projetId,
+      'p_client_nom':   clientNom,
+      'p_client_email': trimEmail,
+      'p_password':     password,
+    });
+    final access = ClientAccess.fromJson((rows as List).first as Map<String, dynamic>);
 
     // Envoie l'email avec les identifiants
     await EmailService.sendClientPassword(
@@ -123,13 +87,11 @@ class ClientPortalService {
   }) async {
     final password = _generatePassword();
 
-    await _supa
-        .from('client_portal_access')
-        .update({
-          'password_raw':     password,
-          'password_changed': false,
-        })
-        .eq('id', accessId);
+    // RPC SECURITY DEFINER pour contourner le RLS sur password_raw
+    await _supa.rpc('reset_client_password', params: {
+      'p_access_id': accessId,
+      'p_password':  password,
+    });
 
     await EmailService.sendClientPassword(
       toEmail:       clientEmail,
@@ -250,6 +212,20 @@ class ClientPortalService {
       'p_role':      role,
     });
   }
+  // ── Modèles 3D d'un projet ───────────────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> getProjectModels(String projetId) async {
+    try {
+      final res = await _supa
+          .from('project_models')
+          .select()
+          .eq('project_id', projetId)
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(res as List);
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── Liste les accès d'un projet ──────────────────────────────────────────
   static Future<List<ClientAccess>> getAccessList(String projetId) async {
     final rows = await _supa

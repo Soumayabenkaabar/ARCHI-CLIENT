@@ -81,8 +81,11 @@ class ClientAuthService {
     if (authCandidates.isNotEmpty) {
       // Cas normal : password_raw présent → vérification directe
       row = Map<String, dynamic>.from(authCandidates.first as Map);
-      final stored = (row['password_raw'] as String?) ?? '';
-      authenticated = stored == trimPassword;
+      final stored = ((row['password_raw'] as String?) ?? '').trim();
+      // Insensible à la casse : le mot de passe généré est en majuscules,
+      // mais certains claviers mobiles peuvent changer la casse.
+      authenticated = stored == trimPassword ||
+          stored.toUpperCase() == trimPassword.toUpperCase();
     }
 
     // Fallback Supabase Auth : première connexion (password_raw non encore défini)
@@ -172,6 +175,39 @@ class ClientAuthService {
       return saved;
     } catch (_) {
       return null;
+    }
+  }
+
+  // ── Rafraîchit nom et téléphone depuis client_portal_access ────────────────
+  // À appeler périodiquement côté client pour refléter les modifications
+  // faites par l'architecte sans que le client ait besoin de se reconnecter.
+  static Future<ClientSession> refreshSession(ClientSession session) async {
+    try {
+      final row = await _supa
+          .from('client_portal_access')
+          .select('client_nom, telephone')
+          .eq('id', session.id)
+          .maybeSingle();
+      if (row == null) return session;
+
+      final nom = (row['client_nom'] as String?)?.trim() ?? session.clientNom;
+      final tel = row['telephone'] as String?;
+
+      if (nom == session.clientNom && tel == session.telephone) return session;
+
+      final updated = ClientSession(
+        id:              session.id,
+        projetId:        session.projetId,
+        clientNom:       nom,
+        clientEmail:     session.clientEmail,
+        passwordChanged: session.passwordChanged,
+        telephone:       tel,
+        clientsId:       session.clientsId,
+      );
+      await saveSession(updated);
+      return updated;
+    } catch (_) {
+      return session;
     }
   }
 

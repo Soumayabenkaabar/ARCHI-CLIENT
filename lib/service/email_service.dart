@@ -46,12 +46,14 @@ class EmailService {
     required String motDePasse,
     required String projetTitre,
     required String architecteNom,
+    String? architecteEmail,
   }) async {
     final html = _buildEmailHtml(
       clientNom: clientNom,
       motDePasse: motDePasse,
       projetTitre: projetTitre,
       architecteNom: architecteNom,
+      architecteEmail: architecteEmail,
       toEmail: toEmail,
     );
 
@@ -70,6 +72,7 @@ class EmailService {
     required String projetTitre,
     required String architecteNom,
     required String toEmail,
+    String? architecteEmail,
   }) =>
       '''
 <!DOCTYPE html>
@@ -112,7 +115,7 @@ class EmailService {
           <tr>
             <td style="background:#F9FAFB;border-top:1px solid #E5E7EB;padding:20px 40px;text-align:center;">
               <p style="color:#9CA3AF;font-size:11px;margin:0;">
-                Envoyé par <strong>$architecteNom</strong> via ArchiManager.<br>
+                Envoyé par <strong>$architecteNom</strong> via ArchiManager.${architecteEmail != null && architecteEmail.isNotEmpty ? '<br>Contact : <a href="mailto:$architecteEmail" style="color:#6B7280;">$architecteEmail</a>' : ''}<br>
                 ⚠️ Ne partagez jamais votre mot de passe.
               </p>
             </td>

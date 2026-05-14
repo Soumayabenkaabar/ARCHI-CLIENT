@@ -150,6 +150,13 @@ class _ClientPortalScreenState extends State<ClientPortalScreen> {
   Future<void> _loadPortalData() async {
     if (!_prefsLoaded) return; // wait for timestamps to be loaded first
 
+    // Rafraîchit nom/téléphone depuis la DB (l'architecte peut les avoir modifiés)
+    final freshSession = await ClientAuthService.refreshSession(_session);
+    if (freshSession.clientNom != _session.clientNom ||
+        freshSession.telephone != _session.telephone) {
+      if (mounted) setState(() => _session = freshSession);
+    }
+
     final projetsData = await ClientPortalService
         .getProjetsForClient(_session.clientEmail,
             clientsId: _session.clientsId,

@@ -13,6 +13,7 @@ class ClientAccess {
   final bool actif;
   final String createdAt;
   final String? lastLogin;
+  final String? telephone;
 
   const ClientAccess({
     required this.id,
@@ -22,6 +23,7 @@ class ClientAccess {
     required this.actif,
     required this.createdAt,
     this.lastLogin,
+    this.telephone,
   });
 
   factory ClientAccess.fromJson(Map<String, dynamic> j) => ClientAccess(
@@ -32,6 +34,7 @@ class ClientAccess {
     actif: j['actif'] ?? true,
     createdAt: j['created_at'] ?? '',
     lastLogin: j['last_login'],
+    telephone: j['telephone'] as String?,
   );
 }
 
@@ -52,6 +55,7 @@ class ClientPortalService {
     required String clientNom,
     required String clientEmail,
     required String architecteNom,
+    String? architecteEmail,
   }) async {
     final trimEmail = clientEmail.trim().toLowerCase();
     final password  = _generatePassword();
@@ -65,13 +69,24 @@ class ClientPortalService {
     });
     final access = ClientAccess.fromJson((rows as List).first as Map<String, dynamic>);
 
+    // Force password_raw dès la création (upsert_client_access ne le set pas toujours)
+    // Sans ça, la 1ère connexion échoue car authCandidates est vide et il n'y a
+    // pas de compte Supabase Auth pour le fallback.
+    try {
+      await _supa.rpc('reset_client_password', params: {
+        'p_access_id': access.id,
+        'p_password':  password,
+      });
+    } catch (_) {}
+
     // Envoie l'email avec les identifiants
     await EmailService.sendClientPassword(
-      toEmail:       trimEmail,
-      clientNom:     clientNom,
-      motDePasse:    password,
-      projetTitre:   projetTitre,
-      architecteNom: architecteNom,
+      toEmail:         trimEmail,
+      clientNom:       clientNom,
+      motDePasse:      password,
+      projetTitre:     projetTitre,
+      architecteNom:   architecteNom,
+      architecteEmail: architecteEmail,
     );
 
     return access;
@@ -84,6 +99,7 @@ class ClientPortalService {
     required String clientNom,
     required String projetTitre,
     required String architecteNom,
+    String? architecteEmail,
   }) async {
     final password = _generatePassword();
 
@@ -94,12 +110,48 @@ class ClientPortalService {
     });
 
     await EmailService.sendClientPassword(
-      toEmail:       clientEmail,
-      clientNom:     clientNom,
-      motDePasse:    password,
-      projetTitre:   projetTitre,
-      architecteNom: architecteNom,
+      toEmail:         clientEmail,
+      clientNom:       clientNom,
+      motDePasse:      password,
+      projetTitre:     projetTitre,
+      architecteNom:   architecteNom,
+      architecteEmail: architecteEmail,
     );
+  }
+
+  // ── Modifie le nom et téléphone du client (côté architecte uniquement) ───
+  // Met à jour la table `clients` (source principale) puis synchronise
+  // client_portal_access pour l'affichage.
+  static Future<void> updateClientInfo({
+    required String accessId,
+    required String projetId,
+    required String clientNom,
+    String? telephone,
+  }) async {
+    // 1. Trouver le client_id via le projet
+    final projetRows = await _supa
+        .from('projets')
+        .select('client_id')
+        .eq('id', projetId)
+        .limit(1);
+
+    final clientId = (projetRows as List).isNotEmpty
+        ? projetRows.first['client_id'] as String?
+        : null;
+
+    // 2. Mettre à jour la table clients (source de vérité)
+    if (clientId != null && clientId.isNotEmpty) {
+      await _supa
+          .from('clients')
+          .update({'nom': clientNom, 'telephone': telephone})
+          .eq('id', clientId);
+    }
+
+    // 3. Synchroniser client_portal_access (affichage dans le dialog)
+    await _supa
+        .from('client_portal_access')
+        .update({'client_nom': clientNom, 'telephone': telephone})
+        .eq('id', accessId);
   }
 
   // ── Active / Désactive l'accès ───────────────────────────────────────────

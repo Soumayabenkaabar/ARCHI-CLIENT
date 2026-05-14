@@ -22,10 +22,12 @@ import '../service/client_portal_service.dart';
 class ClientPortalManagerDialog extends StatefulWidget {
   final Project project;
   final String architecteNom;
+  final String? architecteEmail;
   const ClientPortalManagerDialog({
     super.key,
     required this.project,
     required this.architecteNom,
+    this.architecteEmail,
   });
   @override State<ClientPortalManagerDialog> createState() => _ClientPortalManagerDialogState();
 }
@@ -61,11 +63,12 @@ class _ClientPortalManagerDialogState extends State<ClientPortalManagerDialog> {
     setState(() => _adding = true);
     try {
       await ClientPortalService.createAccess(
-        projetId:      widget.project.id,
-        projetTitre:   widget.project.titre,
-        clientNom:     nom,
-        clientEmail:   email,
-        architecteNom: widget.architecteNom,
+        projetId:        widget.project.id,
+        projetTitre:     widget.project.titre,
+        clientNom:       nom,
+        clientEmail:     email,
+        architecteNom:   widget.architecteNom,
+        architecteEmail: widget.architecteEmail,
       );
       _nomCtrl.clear();
       _emailCtrl.clear();
@@ -75,6 +78,48 @@ class _ClientPortalManagerDialogState extends State<ClientPortalManagerDialog> {
       _snack('Erreur : ${e.toString().replaceAll('Exception: ', '')}', kRed);
     } finally {
       if (mounted) setState(() => _adding = false);
+    }
+  }
+
+  Future<void> _editAccess(ClientAccess access) async {
+    final nomCtrl = TextEditingController(text: access.clientNom);
+    final telCtrl = TextEditingController(text: access.telephone ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Modifier le client', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          _field(icon: LucideIcons.user, hint: 'Nom du client', ctrl: nomCtrl),
+          const SizedBox(height: 10),
+          _field(icon: LucideIcons.phone, hint: 'Téléphone (optionnel)', ctrl: telCtrl, keyboard: TextInputType.phone),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Enregistrer', style: TextStyle(color: kAccent, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    final nom = nomCtrl.text.trim();
+    final tel = telCtrl.text.trim();
+    nomCtrl.dispose();
+    telCtrl.dispose();
+    if (saved != true) return;
+    if (nom.isEmpty) { _snack('Nom obligatoire', kRed); return; }
+    try {
+      await ClientPortalService.updateClientInfo(
+        accessId:  access.id,
+        projetId:  access.projetId,
+        clientNom: nom,
+        telephone: tel.isEmpty ? null : tel,
+      );
+      await _load();
+      _snack('Informations mises à jour ✓', kGreen);
+    } catch (e) {
+      _snack('Erreur lors de la mise à jour', kRed);
     }
   }
 
@@ -94,11 +139,12 @@ class _ClientPortalManagerDialogState extends State<ClientPortalManagerDialog> {
     if (confirm != true) return;
     try {
       await ClientPortalService.resetPassword(
-        accessId:      access.id,
-        clientEmail:   access.clientEmail,
-        clientNom:     access.clientNom,
-        projetTitre:   widget.project.titre,
-        architecteNom: widget.architecteNom,
+        accessId:        access.id,
+        clientEmail:     access.clientEmail,
+        clientNom:       access.clientNom,
+        projetTitre:     widget.project.titre,
+        architecteNom:   widget.architecteNom,
+        architecteEmail: widget.architecteEmail,
       );
       _snack('Nouveau mot de passe envoyé à ${access.clientEmail} ✓', kGreen);
     } catch (e) { _snack('Erreur envoi email', kRed); }
@@ -259,6 +305,8 @@ class _ClientPortalManagerDialogState extends State<ClientPortalManagerDialog> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(a.clientNom, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: kTextMain)),
             Text(a.clientEmail, style: const TextStyle(color: kTextSub, fontSize: 12)),
+            if (a.telephone != null && a.telephone!.isNotEmpty)
+              Text(a.telephone!, style: const TextStyle(color: kTextSub, fontSize: 11)),
           ])),
           // Badge actif/inactif
           GestureDetector(
@@ -290,6 +338,8 @@ class _ClientPortalManagerDialogState extends State<ClientPortalManagerDialog> {
           Text(lastLogin, style: const TextStyle(fontSize: 11, color: kTextSub)),
           const Spacer(),
           // Actions
+          _actionBtn(LucideIcons.pencil, 'Modifier', const Color(0xFF8B5CF6), () => _editAccess(a)),
+          const SizedBox(width: 8),
           _actionBtn(LucideIcons.refreshCw, 'Renvoyer', const Color(0xFF3B82F6), () => _resetPassword(a)),
           const SizedBox(width: 8),
           _actionBtn(LucideIcons.trash2, 'Supprimer', kRed, () => _deleteAccess(a)),
